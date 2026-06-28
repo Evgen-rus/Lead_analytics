@@ -1,6 +1,6 @@
 [
   {
-    "project_code": "[LR128] Baltlease",
+    "project_code": "LR001 Client",
     "pattern": "Запрет звонка",
     "match_type": "exact",
     "group_name": "Некачественные",

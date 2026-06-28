@@ -13,7 +13,7 @@ python -m venv .venv
 ## Сопоставление файлов
 
 ```powershell
-.\.venv\Scripts\python.exe -m app.cli match --project "[LR128] Baltlease" --lk-file "data/input/lk.xlsx" --client-file "data/input/client.xlsx" --interactive
+.\.venv\Scripts\python.exe -m app.cli match --project "LR001 Client" --lk-file "data/input/lk.xlsx" --client-file "data/input/client.xlsx" --interactive
 ```
 
 Результат сохраняется в `data/output/<project>_сопоставление.xlsx`.
@@ -23,7 +23,7 @@ python -m venv .venv
 ## Анализ файла
 
 ```powershell
-.\.venv\Scripts\python.exe -m app.cli analyze "data/output/[LR128]_Baltlease_сопоставление.xlsx" --project "[LR128] Baltlease" --interactive
+.\.venv\Scripts\python.exe -m app.cli analyze "data/output/LR001_Client_сопоставление.xlsx" --project "LR001 Client" --interactive
 ```
 
 Результат сохраняется в `data/output/<project>_аналитика.xlsx`.
@@ -31,7 +31,7 @@ python -m venv .venv
 ## Inspect
 
 ```powershell
-.\.venv\Scripts\python.exe -m app.cli inspect "data/input/file.xlsx" --project "[LR128] Baltlease"
+.\.venv\Scripts\python.exe -m app.cli inspect "data/input/file.xlsx" --project "LR001 Client"
 ```
 
 Команда показывает листы, первые строки, предполагаемые колонки, каналы, источники и топ статусов.
@@ -39,13 +39,13 @@ python -m venv .venv
 ## Правила статусов
 
 ```powershell
-.\.venv\Scripts\python.exe -m app.cli add-rule --project "[LR128] Baltlease" --pattern "Запрет звонка" --group "Некачественные" --match-type exact
-.\.venv\Scripts\python.exe -m app.cli list-rules --project "[LR128] Baltlease"
+.\.venv\Scripts\python.exe -m app.cli add-rule --project "LR001 Client" --pattern "Запрет звонка" --group "Некачественные" --match-type exact
+.\.venv\Scripts\python.exe -m app.cli list-rules --project "LR001 Client"
 .\.venv\Scripts\python.exe -m app.cli update-rule --id 12 --group "Недозвон"
 .\.venv\Scripts\python.exe -m app.cli delete-rule --id 12
 ```
 
-Проектом считается полная строка `--project`, например `[LR128] Baltlease`. Она не разбивается на код и имя.
+Проектом считается полная строка `--project`, например `LR001 Client`. Она не разбивается на код и имя.
 
 ## Структура данных
 
