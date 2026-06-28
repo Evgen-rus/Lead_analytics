@@ -10,4 +10,6 @@ data/output/*
 !data/output/.gitkeep
 
 *.xlsx
+.~lock.*
+*#
 !tests/fixtures/*.xlsx
