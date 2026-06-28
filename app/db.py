@@ -1,0 +1,274 @@
+import sqlite3
+from datetime import datetime
+from pathlib import Path
+
+from app.config import DB_PATH, ensure_dirs
+from app.models import ColumnMapping, StatusRule
+
+
+def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
+    ensure_dirs()
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db(db_path: Path = DB_PATH) -> None:
+    with connect(db_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS projects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_code TEXT UNIQUE,
+                project_name TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS column_mappings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_code TEXT NOT NULL,
+                sheet_name TEXT NOT NULL,
+                date_column TEXT,
+                phone_column TEXT,
+                channel_column TEXT,
+                source_column TEXT,
+                status_column TEXT NOT NULL,
+                comment_column TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS status_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_code TEXT,
+                pattern TEXT NOT NULL,
+                match_type TEXT NOT NULL,
+                group_name TEXT NOT NULL,
+                subgroup_name TEXT,
+                comment TEXT,
+                priority INTEGER DEFAULT 100,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS source_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_code TEXT,
+                source_value TEXT NOT NULL,
+                normalized_source TEXT NOT NULL,
+                comment TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS manual_flags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_code TEXT,
+                pattern TEXT NOT NULL,
+                flag_text TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS file_match_mappings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_code TEXT NOT NULL,
+                file_role TEXT NOT NULL,
+                sheet_name TEXT NOT NULL,
+                lkid_column TEXT,
+                phone_column TEXT,
+                date_column TEXT,
+                source_column TEXT,
+                status_column TEXT,
+                comment_column TEXT,
+                project_column TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """
+        )
+
+
+def now_text() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def ensure_project(project: str) -> None:
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO projects(project_code, project_name, created_at)
+            VALUES (?, ?, ?)
+            """,
+            (project, project, now_text()),
+        )
+
+
+def get_column_mapping(project: str) -> ColumnMapping | None:
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT * FROM column_mappings
+            WHERE project_code = ?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (project,),
+        ).fetchone()
+    if not row:
+        return None
+    return ColumnMapping(
+        sheet_name=row["sheet_name"],
+        date_column=row["date_column"],
+        phone_column=row["phone_column"],
+        channel_column=row["channel_column"],
+        source_column=row["source_column"],
+        status_column=row["status_column"],
+        comment_column=row["comment_column"],
+    )
+
+
+def save_column_mapping(project: str, mapping: ColumnMapping) -> None:
+    stamp = now_text()
+    with connect() as conn:
+        conn.execute("DELETE FROM column_mappings WHERE project_code = ?", (project,))
+        conn.execute(
+            """
+            INSERT INTO column_mappings(
+                project_code, sheet_name, date_column, phone_column, channel_column,
+                source_column, status_column, comment_column, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                project,
+                mapping.sheet_name,
+                mapping.date_column,
+                mapping.phone_column,
+                mapping.channel_column,
+                mapping.source_column,
+                mapping.status_column,
+                mapping.comment_column,
+                stamp,
+                stamp,
+            ),
+        )
+
+
+def get_match_mapping(project: str, file_role: str) -> ColumnMapping | None:
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT * FROM file_match_mappings
+            WHERE project_code = ? AND file_role = ?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (project, file_role),
+        ).fetchone()
+    if not row:
+        return None
+    return ColumnMapping(
+        sheet_name=row["sheet_name"],
+        lkid_column=row["lkid_column"],
+        phone_column=row["phone_column"],
+        date_column=row["date_column"],
+        source_column=row["source_column"],
+        status_column=row["status_column"],
+        comment_column=row["comment_column"],
+        project_column=row["project_column"],
+    )
+
+
+def save_match_mapping(project: str, file_role: str, mapping: ColumnMapping) -> None:
+    stamp = now_text()
+    with connect() as conn:
+        conn.execute(
+            "DELETE FROM file_match_mappings WHERE project_code = ? AND file_role = ?",
+            (project, file_role),
+        )
+        conn.execute(
+            """
+            INSERT INTO file_match_mappings(
+                project_code, file_role, sheet_name, lkid_column, phone_column,
+                date_column, source_column, status_column, comment_column,
+                project_column, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                project,
+                file_role,
+                mapping.sheet_name,
+                mapping.lkid_column,
+                mapping.phone_column,
+                mapping.date_column,
+                mapping.source_column,
+                mapping.status_column,
+                mapping.comment_column,
+                mapping.project_column,
+                stamp,
+                stamp,
+            ),
+        )
+
+
+def add_status_rule(rule: StatusRule) -> None:
+    stamp = now_text()
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO status_rules(
+                project_code, pattern, match_type, group_name, subgroup_name,
+                comment, priority, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                rule.project_code,
+                rule.pattern,
+                rule.match_type,
+                rule.group_name,
+                rule.subgroup_name,
+                rule.comment,
+                rule.priority,
+                stamp,
+                stamp,
+            ),
+        )
+
+
+def list_status_rules(project: str | None = None) -> list[sqlite3.Row]:
+    with connect() as conn:
+        if project:
+            return list(
+                conn.execute(
+                    """
+                    SELECT * FROM status_rules
+                    WHERE project_code IS NULL OR project_code = ?
+                    ORDER BY project_code DESC, priority ASC, id ASC
+                    """,
+                    (project,),
+                )
+            )
+        return list(conn.execute("SELECT * FROM status_rules ORDER BY id ASC"))
+
+
+def update_status_rule(rule_id: int, **fields: str | int | None) -> None:
+    allowed = {"pattern", "match_type", "group_name", "subgroup_name", "comment", "priority"}
+    assignments = []
+    values: list[str | int | None] = []
+    for key, value in fields.items():
+        if key in allowed and value is not None:
+            assignments.append(f"{key} = ?")
+            values.append(value)
+    if not assignments:
+        return
+    assignments.append("updated_at = ?")
+    values.append(now_text())
+    values.append(rule_id)
+    with connect() as conn:
+        conn.execute(f"UPDATE status_rules SET {', '.join(assignments)} WHERE id = ?", values)
+
+
+def delete_status_rule(rule_id: int | None = None, project: str | None = None, pattern: str | None = None) -> None:
+    with connect() as conn:
+        if rule_id is not None:
+            conn.execute("DELETE FROM status_rules WHERE id = ?", (rule_id,))
+        elif project and pattern:
+            conn.execute(
+                "DELETE FROM status_rules WHERE project_code = ? AND pattern = ?",
+                (project, pattern),
+            )

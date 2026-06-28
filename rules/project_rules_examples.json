@@ -1,0 +1,9 @@
+[
+  {
+    "project_code": "[LR128] Baltlease",
+    "pattern": "Запрет звонка",
+    "match_type": "exact",
+    "group_name": "Некачественные",
+    "comment": "Пример проектного правила"
+  }
+]

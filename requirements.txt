@@ -1,0 +1,7 @@
+pandas
+openpyxl
+python-dateutil
+rapidfuzz
+typer
+pydantic
+pytest

@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+
+data/analytics.db
+data/input/*
+data/output/*
+!data/input/.gitkeep
+!data/output/.gitkeep
+
+*.xlsx
+!tests/fixtures/*.xlsx
