@@ -6,6 +6,7 @@ __pycache__/
 data/analytics.db
 data/input/*
 data/output/*
+data/runs/*
 !data/input/.gitkeep
 !data/output/.gitkeep
 
@@ -13,3 +14,6 @@ data/output/*
 .~lock.*
 *#
 !tests/fixtures/*.xlsx
+
+frontend/node_modules/
+frontend/dist/

@@ -10,6 +10,28 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m app.cli init-db
 ```
 
+## Локальный веб-интерфейс
+
+Backend:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Frontend:
+
+```powershell
+cd frontend
+npm.cmd install
+npm.cmd run dev
+```
+
+После запуска откройте `http://localhost:5173`.
+
+В веб-интерфейсе можно загрузить файл из ЛК и файл клиента, проверить найденные колонки,
+запустить сопоставление, выбрать группы для неизвестных статусов, посмотреть предпросмотр
+листов и скачать готовые Excel-файлы.
+
 ## Сопоставление файлов
 
 ```powershell
@@ -49,7 +71,8 @@ python -m venv .venv
 
 ## Структура данных
 
-Входные файлы удобно складывать в `data/input`, результаты появляются в `data/output`, база правил находится в `data/analytics.db`.
+Входные файлы удобно складывать в `data/input`, результаты CLI появляются в `data/output`,
+временные файлы веб-интерфейса хранятся в `data/runs`, база правил находится в `data/analytics.db`.
 
 ## Будущее расширение
 
