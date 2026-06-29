@@ -164,6 +164,9 @@ def analyze(
     by_domain_channel = summarize(data, ["Домен", "Канал"]).sort_values(
         ["Кач. %", "Сигнал спроса %", "Всего идентификаций"], ascending=[False, False, False]
     )
+    by_source_channel = summarize(data, ["Полный источник", "Канал"]).sort_values(
+        ["Кач. %", "Сигнал спроса %", "Всего идентификаций"], ascending=[False, False, False]
+    )
     channels = summarize(data, ["Канал"]).sort_values(
         ["Сигнал спроса %", "Недозвон %"], ascending=[False, True]
     )
@@ -176,6 +179,7 @@ def analyze(
         {
             "Итог": total,
             "Итог по доменам + каналам": by_domain_channel,
+            "Итог по источникам + каналам": by_source_channel,
             "Статусы": statuses,
             "Каналы": channels,
             "Выводы": conclusions,
