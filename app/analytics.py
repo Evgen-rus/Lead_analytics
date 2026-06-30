@@ -30,13 +30,14 @@ def summarize(df: pd.DataFrame, by: list[str]) -> pd.DataFrame:
             row.update({col: value for col, value in zip(by, keys)})
         total = len(part)
         row[COUNT_COL] = total
+        demand = int(part[GROUP_COL].isin(DEMAND_GROUPS).sum())
         for group in ALL_GROUPS:
             count = int((part[GROUP_COL] == group).sum())
             row[group] = count
             row[f"{_short(group)} %"] = count / total if total else 0
-        demand = int(part[GROUP_COL].isin(DEMAND_GROUPS).sum())
-        row["Сигнал спроса"] = demand
-        row["Сигнал спроса %"] = demand / total if total else 0
+            if group == "Уже наши / уже купил":
+                row["Сигнал спроса"] = demand
+                row["Сигнал спроса %"] = demand / total if total else 0
         rows.append(row)
     result = pd.DataFrame(rows)
     return result
