@@ -34,6 +34,21 @@ button,
   justify-content: center;
 }
 
+.download.secondary {
+  background: #344054;
+}
+
+.download.disabledLink {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+.dangerButton {
+  min-height: 32px;
+  background: #b42318;
+  padding: 6px 10px;
+}
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
@@ -100,7 +115,8 @@ p {
 
 .panelHeader,
 .sectionBar,
-.downloadRow {
+.downloadRow,
+.actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -118,7 +134,8 @@ p {
 }
 
 .uploadGrid,
-.mappingGrid {
+.mappingGrid,
+.exportMetaGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(220px, 1fr));
   gap: 12px;
@@ -132,17 +149,43 @@ p {
 
 .field,
 .fileField,
-.ruleRow {
+.ruleRow,
+.checkField {
   display: grid;
   gap: 6px;
 }
 
 .field span,
 .fileField span,
-.ruleRow span {
+.ruleRow span,
+.checkField span {
   color: #344054;
   font-size: 13px;
   font-weight: 600;
+}
+
+.checkField {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 22px;
+}
+
+.checkField input {
+  width: 18px;
+  min-height: 18px;
+}
+
+.emptyState {
+  border: 1px dashed #cfd8e3;
+  border-radius: 6px;
+  color: #667085;
+  padding: 14px;
+  background: #f8fafc;
+}
+
+.historyWrap {
+  max-height: 320px;
 }
 
 input,
@@ -228,8 +271,13 @@ tbody tr:nth-child(even) {
 
   .uploadGrid,
   .mappingGrid,
+  .exportMetaGrid,
   .twoColumn,
   .ruleRow {
     grid-template-columns: 1fr;
+  }
+
+  .actions {
+    width: 100%;
   }
 }

@@ -16,6 +16,13 @@ from pydantic import BaseModel
 from app import db
 from app.config import DATA_DIR, ensure_dirs
 from app.excel_reader import list_sheets, read_excel_sheet
+from app.export_history import (
+    ExportMetadata,
+    delete_analysis_export,
+    list_exports,
+    write_project_comparison,
+    write_project_summary,
+)
 from app.matcher import match_files
 from app.models import ColumnMapping, StatusRule
 from app.pipeline import analyze_file
@@ -63,6 +70,27 @@ class AnalyzePayload(BaseModel):
     project: str
     mapping: MappingPayload
     status_rules: dict[str, str] = {}
+    export_number: int
+    period_start: date
+    period_end: date
+    analysis_date: date | None = None
+    source_file_name: str | None = None
+    replace_export: bool = False
+
+
+class ExportRecord(BaseModel):
+    export_number: int
+    period_start: str
+    period_end: str
+    analysis_date: str
+    source_file_name: str
+    total_count: int
+    missed_count: int
+    missed_rate: float
+    quality_count: int
+    quality_rate: float
+    demand_count: int
+    demand_rate: float
 
 
 class SheetPreview(BaseModel):
@@ -226,6 +254,49 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/projects", response_model=list[str])
+def projects() -> list[str]:
+    db.init_db()
+    return db.list_projects()
+
+
+@app.get("/api/exports", response_model=list[ExportRecord])
+def saved_exports(project: str) -> list[ExportRecord]:
+    db.init_db()
+    return [ExportRecord(**item) for item in list_exports(project.strip())]
+
+
+@app.delete("/api/exports")
+def delete_saved_export(project: str, export_number: int) -> dict[str, bool]:
+    db.init_db()
+    deleted = delete_analysis_export(project.strip(), export_number)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Выгрузка не найдена")
+    return {"deleted": True}
+
+
+@app.get("/api/summary/download")
+def download_summary(project: str) -> FileResponse:
+    db.init_db()
+    path = write_project_summary(project.strip(), RUNS_DIR / "summaries")
+    return FileResponse(
+        path,
+        filename=path.name,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.get("/api/compare/download")
+def download_comparison(project: str) -> FileResponse:
+    db.init_db()
+    path = write_project_comparison(project.strip(), RUNS_DIR / "summaries")
+    return FileResponse(
+        path,
+        filename=path.name,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 @app.post("/api/runs", response_model=UploadResponse)
 def create_run(
     project: str = Form(...),
@@ -305,6 +376,10 @@ def run_analyze(run_id: str, payload: AnalyzePayload) -> AnalyzeResponse:
     project = payload.project.strip()
     if not project:
         raise HTTPException(status_code=400, detail="Укажите проект")
+    if payload.export_number <= 0:
+        raise HTTPException(status_code=400, detail="Номер выгрузки должен быть положительным")
+    if payload.period_start > payload.period_end:
+        raise HTTPException(status_code=400, detail="Дата начала периода не может быть позже даты конца")
     mapping = _to_mapping(payload.mapping)
     if not mapping.status_column:
         raise HTTPException(status_code=400, detail="Для аналитики нужен статус")
@@ -324,7 +399,24 @@ def run_analyze(run_id: str, payload: AnalyzePayload) -> AnalyzeResponse:
                     comment="Добавлено через web",
                 )
             )
-    output = analyze_file(project, _output_file(run_id, "match"), mapping, _output_dir(run_id))
+    input_file = _output_file(run_id, "match")
+    try:
+        output = analyze_file(
+            project,
+            input_file,
+            mapping,
+            _output_dir(run_id),
+            ExportMetadata(
+                export_number=payload.export_number,
+                period_start=payload.period_start.isoformat(),
+                period_end=payload.period_end.isoformat(),
+                analysis_date=payload.analysis_date.isoformat() if payload.analysis_date else None,
+                source_file_name=payload.source_file_name or input_file.name,
+            ),
+            replace_export=payload.replace_export,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return AnalyzeResponse(filename=output.name, preview=_preview_workbook(output))
 
 

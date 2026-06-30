@@ -50,6 +50,21 @@ npm.cmd run dev
 
 Результат сохраняется в `data/output/<project>_аналитика.xlsx`.
 
+## История выгрузок и сводка проекта
+
+В веб-интерфейсе перед запуском аналитики нужно указать номер выгрузки и период данных через календарь. Дата анализа ставится автоматически текущей датой, но ее можно изменить вручную. После успешного анализа агрегированные показатели сохраняются в SQLite `data/analytics.db`.
+
+Одна выгрузка хранится как отдельный срез проекта. Сводка и сравнение строятся из SQLite: проценты используются как основной показатель эффективности, количества показываются как объем выборки.
+
+Служебные CLI-команды:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.cli analyze "data/output/file.xlsx" --project "Project" --export-number 1 --period-from 2026-06-01 --period-to 2026-06-07 --auto
+.\.venv\Scripts\python.exe -m app.cli project-summary --project "Project"
+.\.venv\Scripts\python.exe -m app.cli compare-exports --project "Project"
+.\.venv\Scripts\python.exe -m app.cli delete-export --project "Project" --export-number 1
+```
+
 ## Inspect
 
 ```powershell

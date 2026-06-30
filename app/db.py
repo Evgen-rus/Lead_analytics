@@ -80,6 +80,43 @@ def init_db(db_path: Path = DB_PATH) -> None:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS analysis_exports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_code TEXT NOT NULL,
+                export_number INTEGER NOT NULL,
+                period_start TEXT NOT NULL,
+                period_end TEXT NOT NULL,
+                analysis_date TEXT NOT NULL,
+                source_file_name TEXT NOT NULL,
+                report_file_name TEXT,
+                total_count INTEGER NOT NULL DEFAULT 0,
+                missed_count INTEGER NOT NULL DEFAULT 0,
+                missed_rate REAL NOT NULL DEFAULT 0,
+                quality_count INTEGER NOT NULL DEFAULT 0,
+                quality_rate REAL NOT NULL DEFAULT 0,
+                demand_count INTEGER NOT NULL DEFAULT 0,
+                demand_rate REAL NOT NULL DEFAULT 0,
+                metrics_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(project_code, export_number)
+            );
+            CREATE TABLE IF NOT EXISTS analysis_export_breakdowns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                export_id INTEGER NOT NULL,
+                breakdown_type TEXT NOT NULL,
+                dimension_1 TEXT,
+                dimension_2 TEXT,
+                total_count INTEGER NOT NULL DEFAULT 0,
+                missed_count INTEGER NOT NULL DEFAULT 0,
+                missed_rate REAL NOT NULL DEFAULT 0,
+                quality_count INTEGER NOT NULL DEFAULT 0,
+                quality_rate REAL NOT NULL DEFAULT 0,
+                demand_count INTEGER NOT NULL DEFAULT 0,
+                demand_rate REAL NOT NULL DEFAULT 0,
+                metrics_json TEXT NOT NULL DEFAULT '{}',
+                FOREIGN KEY(export_id) REFERENCES analysis_exports(id) ON DELETE CASCADE
+            );
             """
         )
 
@@ -97,6 +134,17 @@ def ensure_project(project: str) -> None:
             """,
             (project, project, now_text()),
         )
+
+
+def list_projects() -> list[str]:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT project_code FROM projects
+            ORDER BY project_code COLLATE NOCASE ASC
+            """
+        ).fetchall()
+    return [row["project_code"] for row in rows]
 
 
 def get_column_mapping(project: str) -> ColumnMapping | None:

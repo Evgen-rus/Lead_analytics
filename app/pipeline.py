@@ -7,6 +7,7 @@ import pandas as pd
 from app.analytics import add_domain, status_summary, summarize
 from app.conclusions import build_conclusions
 from app.excel_reader import read_excel_sheet
+from app.export_history import ExportMetadata, save_analysis_export
 from app.models import ColumnMapping
 from app.report_writer import write_excel
 from app.source_utils import NO_DATA, normalize_source, safe_filename
@@ -18,6 +19,8 @@ def analyze_file(
     file: str | Path,
     mapping: ColumnMapping,
     output_dir: str | Path,
+    export_metadata: ExportMetadata | None = None,
+    replace_export: bool = False,
 ) -> Path:
     df = read_excel_sheet(file, mapping.sheet_name)
 
@@ -56,7 +59,7 @@ def analyze_file(
     conclusions = build_conclusions(total, channels)
 
     output = Path(output_dir) / f"{safe_filename(project)}_аналитика.xlsx"
-    return write_excel(
+    written = write_excel(
         output,
         {
             "Итог": total,
@@ -68,3 +71,17 @@ def analyze_file(
             "Данные": data,
         },
     )
+    if export_metadata:
+        save_analysis_export(
+            project,
+            export_metadata,
+            total,
+            {
+                "domain_channel": by_domain_channel,
+                "source_channel": by_source_channel,
+                "channel": channels,
+            },
+            report_file_name=written.name,
+            replace=replace_export,
+        )
+    return written

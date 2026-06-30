@@ -8,6 +8,12 @@ import typer
 from app import db
 from app.config import OUTPUT_DIR, ensure_dirs
 from app.excel_reader import read_excel_sheet, workbook_preview
+from app.export_history import (
+    ExportMetadata,
+    delete_analysis_export,
+    write_project_comparison,
+    write_project_summary,
+)
 from app.interactive import ask_analyze_mapping, ask_match_mapping, ask_status_group
 from app.matcher import match_files
 from app.models import StatusRule
@@ -106,6 +112,11 @@ def match(
 def analyze(
     file: Path,
     project: str = typer.Option(...),
+    export_number: Optional[int] = typer.Option(None),
+    period_from: Optional[str] = typer.Option(None),
+    period_to: Optional[str] = typer.Option(None),
+    analysis_date: Optional[str] = typer.Option(None),
+    replace_export: bool = typer.Option(False),
     auto: bool = typer.Option(False),
     interactive: bool = typer.Option(False),
     strict: bool = typer.Option(False),
@@ -140,8 +151,45 @@ def analyze(
                 )
             )
 
-    output = analyze_file(project, file, mapping, OUTPUT_DIR)
+    export_metadata = None
+    if export_number or period_from or period_to or analysis_date:
+        if export_number is None or not period_from or not period_to:
+            raise typer.BadParameter(
+                "Для сохранения выгрузки укажите --export-number, --period-from и --period-to."
+            )
+        export_metadata = ExportMetadata(
+            export_number=export_number,
+            period_start=period_from,
+            period_end=period_to,
+            analysis_date=analysis_date,
+            source_file_name=file.name,
+        )
+
+    output = analyze_file(project, file, mapping, OUTPUT_DIR, export_metadata, replace_export)
     typer.echo(f"Готово: {output}")
+
+
+@app.command("project-summary")
+def project_summary(project: str = typer.Option(...)) -> None:
+    ensure_dirs()
+    db.init_db()
+    output = write_project_summary(project, OUTPUT_DIR)
+    typer.echo(f"Готово: {output}")
+
+
+@app.command("compare-exports")
+def compare_exports(project: str = typer.Option(...)) -> None:
+    ensure_dirs()
+    db.init_db()
+    output = write_project_comparison(project, OUTPUT_DIR)
+    typer.echo(f"Готово: {output}")
+
+
+@app.command("delete-export")
+def delete_export(project: str = typer.Option(...), export_number: int = typer.Option(...)) -> None:
+    db.init_db()
+    deleted = delete_analysis_export(project, export_number)
+    typer.echo("Выгрузка удалена." if deleted else "Выгрузка не найдена.")
 
 
 @app.command("add-rule")
