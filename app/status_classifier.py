@@ -20,6 +20,7 @@ ALL_GROUPS = [
     "Некачественные",
     "Не подходит по гео",
     "Еще не звонили",
+    "Не учитывать",
     "Требует проверки",
 ]
 
@@ -87,11 +88,30 @@ def _match(rule: StatusRule, text: str, status_text: str) -> bool:
     return False
 
 
+def _is_missing(value: object) -> bool:
+    if value is None:
+        return True
+    try:
+        if value != value:
+            return True
+    except TypeError:
+        pass
+    text = str(value).strip().casefold()
+    return text in {"", "nan", "none", "<na>", "nat"}
+
+
+def _clean_text(value: object) -> str:
+    if _is_missing(value):
+        return ""
+    return str(value).strip()
+
+
 def classify(status: object, comment: object = None, project: str = "") -> tuple[str, str]:
-    status_text = str(status or "")
-    text = " ".join(str(part) for part in [status_text, comment or ""] if str(part).strip())
+    status_text = _clean_text(status)
+    comment_text = _clean_text(comment)
+    text = " ".join(part for part in [status_text, comment_text] if part)
     if not text.strip():
-        return "Требует проверки", "пустой статус"
+        return "Не учитывать", "пустой статус"
     rules = sorted_rules(project)
     for rule in rules:
         if _match(rule, text, status_text):
@@ -103,7 +123,7 @@ def classify(status: object, comment: object = None, project: str = "") -> tuple
 
 def unknown_statuses(statuses: list[object], project: str) -> list[str]:
     result = []
-    for value in sorted({str(status).strip() for status in statuses if str(status).strip()}):
+    for value in sorted({_clean_text(status) for status in statuses if _clean_text(status)}):
         group, _ = classify(value, None, project)
         if group == "Требует проверки":
             result.append(value)

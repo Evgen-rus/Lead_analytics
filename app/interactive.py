@@ -4,18 +4,10 @@ import typer
 
 from app.excel_reader import list_sheets, read_excel_sheet
 from app.models import ColumnMapping
+from app.status_classifier import ALL_GROUPS
 
 
-GROUPS = [
-    "Качественные",
-    "Рабочий потенциал",
-    "Уже наши / уже купил",
-    "Недозвон",
-    "Некачественные",
-    "Не подходит по гео",
-    "Еще не звонили",
-    "Требует проверки",
-]
+GROUPS = ALL_GROUPS
 
 
 def _choose(prompt: str, values: list[str], required: bool = False) -> str | None:
