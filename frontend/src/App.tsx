@@ -16,6 +16,7 @@ import {
   MappingPanel,
   MatchSummary,
   ProcessProgress,
+  ProjectCombo,
   StatusRulesModal,
   Stepper,
   WorkbookViewer
@@ -234,7 +235,10 @@ export default function App() {
           <h1>Lead Analytics</h1>
           <p>Локальное сопоставление и аналитика Excel-файлов</p>
         </div>
-        <div className="status">{loading ? operation || "Выполняется..." : "Готово к работе"}</div>
+        <div className={`statusBadge ${loading ? "busy" : "ready"}`}>
+          <span aria-hidden="true" />
+          {loading ? operation || "Выполняется..." : "Готово к работе"}
+        </div>
       </section>
 
       <Stepper step={step} />
@@ -247,7 +251,7 @@ export default function App() {
             <div className="panelHeader">
               <div>
                 <h2>Проект и файлы</h2>
-                <p>Выбери проект, файл из ЛК и файл клиента</p>
+                <p>Выбери проект, нашу выгрузку и выгрузку клиента</p>
               </div>
               <button onClick={uploadFiles} disabled={!canUpload || loading}>
                 Загрузить и проверить
@@ -256,20 +260,10 @@ export default function App() {
             <div className="uploadGrid">
               <label className="field">
                 <span>Проект</span>
-                <input
-                  value={project}
-                  list="project-options"
-                  placeholder="Введите проект или выберите сохраненный"
-                  onChange={(event) => setProject(event.target.value)}
-                />
-                <datalist id="project-options">
-                  {projects.map((item) => (
-                    <option value={item} key={item} />
-                  ))}
-                </datalist>
+                <ProjectCombo value={project} projects={projects} disabled={loading} onChange={setProject} />
               </label>
               <FileDropZone
-                label="Файл из ЛК"
+                label="Наша выгрузка / ЛК"
                 file={lkFile}
                 disabled={loading}
                 onChange={(file) => {
@@ -278,7 +272,7 @@ export default function App() {
                 }}
               />
               <FileDropZone
-                label="Файл клиента"
+                label="Выгрузка клиента / CRM"
                 file={clientFile}
                 disabled={loading}
                 onChange={(file) => {

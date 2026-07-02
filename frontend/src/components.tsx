@@ -1,4 +1,4 @@
-import { DragEvent, useId, useMemo, useState } from "react";
+import { DragEvent, useId, useMemo, useRef, useState } from "react";
 import { API, projectQuery } from "./api";
 import type {
   AnalyzeSetup,
@@ -123,6 +123,67 @@ export function FileDropZone({
         <small>{fileLabel(file)}</small>
       </label>
       {error && <small className="fieldError">{error}</small>}
+    </div>
+  );
+}
+
+export function ProjectCombo({
+  value,
+  projects,
+  disabled = false,
+  onChange
+}: {
+  value: string;
+  projects: string[];
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const normalized = value.trim().toLowerCase();
+  const filtered = projects
+    .filter((project) => !normalized || project.toLowerCase().includes(normalized))
+    .slice(0, 12);
+  const hasOptions = filtered.length > 0;
+
+  function pickProject(project: string) {
+    onChange(project);
+    setOpen(false);
+  }
+
+  return (
+    <div
+      className="projectCombo"
+      ref={wrapperRef}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setOpen(false);
+        }
+      }}
+    >
+      <input
+        value={value}
+        disabled={disabled}
+        placeholder="Введите проект или выберите сохраненный"
+        onFocus={() => setOpen(true)}
+        onChange={(event) => {
+          onChange(event.target.value);
+          setOpen(true);
+        }}
+      />
+      {open && (
+        <div className="comboMenu" role="listbox">
+          {hasOptions ? (
+            filtered.map((project) => (
+              <button type="button" role="option" onMouseDown={(event) => event.preventDefault()} onClick={() => pickProject(project)} key={project}>
+                {project}
+              </button>
+            ))
+          ) : (
+            <div className="comboEmpty">Сохраненные проекты не найдены</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -568,7 +629,7 @@ export function ExportHistory({
       <div className="panelHeader">
         <div>
           <h2>История выгрузок</h2>
-          <p>{hasProject ? "Сохраненные аналитики выбранного проекта" : "Введите проект или выберите сохраненный"}</p>
+          <p>{hasProject ? "Сохранённые аналитики выбранного проекта" : "Введите проект или выберите сохранённый"}</p>
         </div>
         <div className="actions">
           <a className={`download ${!exports.length ? "disabledLink" : ""}`} href={exports.length ? summaryUrl : "#"}>
@@ -580,7 +641,10 @@ export function ExportHistory({
         </div>
       </div>
       {exports.length === 0 ? (
-        <div className="emptyState">Сохраненных выгрузок пока нет.</div>
+        <div className="emptyState">
+          <strong>Сохранённых выгрузок пока нет.</strong>
+          <span>После первой аналитики здесь появятся периоды, файлы и ключевые показатели.</span>
+        </div>
       ) : (
         <div className="tableWrap historyWrap">
           <table>
