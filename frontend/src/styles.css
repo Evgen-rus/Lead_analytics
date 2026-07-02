@@ -237,6 +237,82 @@ p {
   white-space: nowrap;
 }
 
+.filePicker {
+  display: grid;
+  gap: 6px;
+}
+
+.filePicker > span {
+  color: #344054;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dropZone {
+  min-height: 112px;
+  border: 1px dashed #aab8c7;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 14px;
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.dropZone:hover,
+.dropZone.dragging {
+  border-color: #0f6b8d;
+  background: #e7f3f7;
+  box-shadow: inset 0 0 0 1px #0f6b8d;
+}
+
+.dropZone.hasFile {
+  border-style: solid;
+  background: #fff;
+}
+
+.dropZone input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dropZone strong {
+  color: #17202a;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropZone small,
+.fieldError {
+  color: #667085;
+}
+
+.fieldError {
+  color: #b42318;
+}
+
+.fileBadge {
+  width: fit-content;
+  border-radius: 4px;
+  background: #0f6b8d;
+  color: #fff;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
 .checkField {
   display: flex;
   align-items: center;
@@ -407,6 +483,174 @@ tbody tr:nth-child(even) {
   align-items: center;
 }
 
+.processPanel {
+  border: 1px solid #cfd8e3;
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+  margin-bottom: 16px;
+  box-shadow: 0 8px 26px rgba(15, 32, 45, 0.08);
+}
+
+.processHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.spinner {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 3px solid #d9e2ec;
+  border-top-color: #0f6b8d;
+  animation: spin 900ms linear infinite;
+  flex: 0 0 auto;
+}
+
+.processTrack {
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #edf2f7;
+  margin-bottom: 12px;
+}
+
+.processTrack span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0f6b8d, #40a4bf);
+  transition: width 220ms ease;
+  position: relative;
+}
+
+.processTrack span::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  animation: shimmer 1100ms ease-in-out infinite;
+}
+
+.processSteps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.processStep {
+  min-height: 48px;
+  border: 1px solid #d9e2ec;
+  border-radius: 6px;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: #667085;
+}
+
+.processStep span {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #edf2f7;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.processStep strong {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.processStep.done span,
+.processStep.active span {
+  background: #0f6b8d;
+  color: #fff;
+}
+
+.processStep.active {
+  border-color: #0f6b8d;
+  color: #17202a;
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(15, 32, 45, 0.42);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.modalPanel {
+  width: min(760px, 100%);
+  max-height: min(760px, calc(100vh - 40px));
+  overflow: auto;
+  border-radius: 8px;
+  border: 1px solid #d9e2ec;
+  background: #fff;
+  box-shadow: 0 20px 70px rgba(15, 32, 45, 0.25);
+  padding: 18px;
+}
+
+.modalHeader,
+.modalFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modalHeader {
+  margin-bottom: 16px;
+}
+
+.modalFooter {
+  border-top: 1px solid #edf1f5;
+  padding-top: 14px;
+  margin-top: 16px;
+}
+
+.modalRules {
+  max-height: 460px;
+  overflow: auto;
+}
+
+.iconButton {
+  width: 36px;
+  min-height: 36px;
+  padding: 0;
+  font-weight: 800;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(100%);
+  }
+}
+
 @media (max-width: 1100px) {
   .summaryGrid {
     grid-template-columns: repeat(2, minmax(150px, 1fr));
@@ -423,7 +667,10 @@ tbody tr:nth-child(even) {
   .sectionBar,
   .previewHeader,
   .downloadRow,
-  .confirmBar {
+  .confirmBar,
+  .processHeader,
+  .modalHeader,
+  .modalFooter {
     align-items: stretch;
     flex-direction: column;
   }
@@ -434,7 +681,8 @@ tbody tr:nth-child(even) {
   .exportMetaGrid,
   .twoColumn,
   .ruleRow,
-  .summaryGrid {
+  .summaryGrid,
+  .processSteps {
     grid-template-columns: 1fr;
   }
 

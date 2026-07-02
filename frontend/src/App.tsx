@@ -12,13 +12,15 @@ import {
 import {
   AnalyzeSummary,
   ExportHistory,
+  FileDropZone,
   MappingPanel,
   MatchSummary,
-  StatusRulesPanel,
+  ProcessProgress,
+  StatusRulesModal,
   Stepper,
   WorkbookViewer
 } from "./components";
-import type { AnalyzeSetup, ExportRecord, Mapping, Step, UploadResponse, WorkbookPreview } from "./types";
+import type { AnalyzeSetup, ExportRecord, Mapping, OperationStage, Step, UploadResponse, WorkbookPreview } from "./types";
 
 const emptyMapping: Mapping = { sheet_name: "" };
 
@@ -28,10 +30,6 @@ function normalizeMapping(mapping: Mapping, sheetName: string): Mapping {
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
-}
-
-function fileName(file: File | null): string {
-  return file?.name ?? "Файл не выбран";
 }
 
 export default function App() {
@@ -56,8 +54,10 @@ export default function App() {
   const [step, setStep] = useState<Step>("upload");
   const [loading, setLoading] = useState(false);
   const [operation, setOperation] = useState("");
+  const [operationStage, setOperationStage] = useState<OperationStage | null>(null);
   const [error, setError] = useState("");
   const [deletingExport, setDeletingExport] = useState<number | null>(null);
+  const [statusModalOpen, setStatusModalOpen] = useState(false);
 
   const canUpload = useMemo(() => project.trim() && lkFile && clientFile, [project, lkFile, clientFile]);
   const canMatch = useMemo(
@@ -107,6 +107,7 @@ export default function App() {
     setAnalyzeMapping(emptyMapping);
     setStatusRules({});
     setAnalyzePreview(null);
+    setStatusModalOpen(false);
     setStep("upload");
   }
 
@@ -114,9 +115,11 @@ export default function App() {
     if (!canUpload || !lkFile || !clientFile) return;
     setLoading(true);
     setOperation("Загружаю и читаю Excel-файлы");
+    setOperationStage("upload");
     setError("");
     try {
       const data = await uploadRun(project, lkFile, clientFile);
+      setOperationStage("read");
       setUpload(data);
       setMatchPreview(null);
       setAnalyzeSetup(null);
@@ -130,6 +133,7 @@ export default function App() {
     } finally {
       setLoading(false);
       setOperation("");
+      setOperationStage(null);
     }
   }
 
@@ -137,11 +141,13 @@ export default function App() {
     if (!upload || !canMatch) return;
     setLoading(true);
     setOperation("Сопоставляю строки и готовлю Excel");
+    setOperationStage("match");
     setError("");
     try {
       const data = await runMatchRequest(upload.run_id, project, lkMapping, clientMapping);
       setMatchPreview(data.preview);
       setOperation("Определяю колонки аналитики и неизвестные статусы");
+      setOperationStage("prepare");
       const setup = await fetchAnalyzeSetup(upload.run_id, project);
       setAnalyzeSetup(setup);
       setAnalyzeMapping(normalizeMapping(setup.mapping, setup.sheets[0]?.name ?? ""));
@@ -152,13 +158,25 @@ export default function App() {
     } finally {
       setLoading(false);
       setOperation("");
+      setOperationStage(null);
     }
+  }
+
+  function requestAnalyze() {
+    if (!analyzeSetup) return;
+    if (analyzeSetup.unknown_statuses.length > 0) {
+      setStatusModalOpen(true);
+      return;
+    }
+    runAnalyze();
   }
 
   async function runAnalyze() {
     if (!upload || !canAnalyze) return;
+    setStatusModalOpen(false);
     setLoading(true);
     setOperation("Формирую аналитику и сохраняю выгрузку");
+    setOperationStage("prepare");
     setError("");
     try {
       const numberValue = Number(exportNumber);
@@ -176,6 +194,7 @@ export default function App() {
         source_file_name: clientFile?.name || matchPreview?.filename || upload.client.filename,
         replace_export: replaceExport
       });
+      setOperationStage("done");
       setAnalyzePreview(data.preview);
       await refreshProjects();
       await refreshExports(project);
@@ -185,6 +204,7 @@ export default function App() {
     } finally {
       setLoading(false);
       setOperation("");
+      setOperationStage(null);
     }
   }
 
@@ -192,6 +212,7 @@ export default function App() {
     if (!project.trim() || deletingExport === null) return;
     setLoading(true);
     setOperation("Удаляю выгрузку из истории");
+    setOperationStage("done");
     setError("");
     try {
       await deleteExportRequest(project, deletingExport);
@@ -202,6 +223,7 @@ export default function App() {
     } finally {
       setLoading(false);
       setOperation("");
+      setOperationStage(null);
     }
   }
 
@@ -216,6 +238,7 @@ export default function App() {
       </section>
 
       <Stepper step={step} />
+      <ProcessProgress active={loading} stage={operationStage} label={operation} />
       {error && <div className="alert">{error}</div>}
 
       {step === "upload" && (
@@ -245,30 +268,24 @@ export default function App() {
                   ))}
                 </datalist>
               </label>
-              <label className="fileField">
-                <span>Файл из ЛК</span>
-                <input
-                  type="file"
-                  accept=".xlsx"
-                  onChange={(event) => {
-                    setLkFile(event.target.files?.[0] ?? null);
-                    resetRunOutputs();
-                  }}
-                />
-                <small>{fileName(lkFile)}</small>
-              </label>
-              <label className="fileField">
-                <span>Файл клиента</span>
-                <input
-                  type="file"
-                  accept=".xlsx"
-                  onChange={(event) => {
-                    setClientFile(event.target.files?.[0] ?? null);
-                    resetRunOutputs();
-                  }}
-                />
-                <small>{fileName(clientFile)}</small>
-              </label>
+              <FileDropZone
+                label="Файл из ЛК"
+                file={lkFile}
+                disabled={loading}
+                onChange={(file) => {
+                  setLkFile(file);
+                  resetRunOutputs();
+                }}
+              />
+              <FileDropZone
+                label="Файл клиента"
+                file={clientFile}
+                disabled={loading}
+                onChange={(file) => {
+                  setClientFile(file);
+                  resetRunOutputs();
+                }}
+              />
             </div>
           </section>
           <ExportHistory
@@ -317,7 +334,7 @@ export default function App() {
               <button className="ghostButton" onClick={() => setStep("mapping")} disabled={loading}>
                 Назад
               </button>
-              <button onClick={runAnalyze} disabled={!canAnalyze || loading}>
+              <button onClick={requestAnalyze} disabled={!canAnalyze || loading}>
                 Сделать аналитику
               </button>
             </div>
@@ -370,8 +387,16 @@ export default function App() {
           </section>
 
           <MappingPanel title="Колонки аналитики" file={analyzeSetup} mapping={analyzeMapping} role="analyze" onChange={setAnalyzeMapping} />
-          <StatusRulesPanel setup={analyzeSetup} statusRules={statusRules} onChange={setStatusRules} />
           {matchPreview && <WorkbookViewer title="Предпросмотр сопоставления" workbook={matchPreview} />}
+          <StatusRulesModal
+            open={statusModalOpen}
+            setup={analyzeSetup}
+            statusRules={statusRules}
+            loading={loading}
+            onChange={setStatusRules}
+            onCancel={() => setStatusModalOpen(false)}
+            onConfirm={runAnalyze}
+          />
         </>
       )}
 

@@ -1,6 +1,15 @@
-import { useMemo, useState } from "react";
+import { DragEvent, useId, useMemo, useState } from "react";
 import { API, projectQuery } from "./api";
-import type { AnalyzeSetup, ExportRecord, FileInspect, Mapping, SheetPreview, Step, WorkbookPreview } from "./types";
+import type {
+  AnalyzeSetup,
+  ExportRecord,
+  FileInspect,
+  Mapping,
+  OperationStage,
+  SheetPreview,
+  Step,
+  WorkbookPreview
+} from "./types";
 
 type MappingFile = FileInspect | AnalyzeSetup;
 
@@ -46,6 +55,120 @@ function valueFromCheckSheet(workbook: WorkbookPreview, key: string): string {
 
 function firstRow(workbook: WorkbookPreview, sheetName: string): Record<string, unknown> {
   return workbook.sheets.find((item) => item.name === sheetName)?.rows[0] ?? {};
+}
+
+function fileLabel(file: File | null): string {
+  if (!file) return "Файл не выбран";
+  const sizeMb = file.size / 1024 / 1024;
+  return `${file.name} · ${sizeMb >= 1 ? sizeMb.toFixed(1) : "<1"} МБ`;
+}
+
+function validExcelFile(file: File): boolean {
+  return file.name.toLowerCase().endsWith(".xlsx");
+}
+
+export function FileDropZone({
+  label,
+  file,
+  disabled = false,
+  onChange
+}: {
+  label: string;
+  file: File | null;
+  disabled?: boolean;
+  onChange: (file: File | null) => void;
+}) {
+  const inputId = useId();
+  const [dragging, setDragging] = useState(false);
+  const [error, setError] = useState("");
+
+  function selectFile(nextFile: File | null) {
+    if (nextFile && !validExcelFile(nextFile)) {
+      setError("Нужен файл .xlsx");
+      return;
+    }
+    setError("");
+    onChange(nextFile);
+  }
+
+  function handleDrop(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    setDragging(false);
+    if (disabled) return;
+    selectFile(event.dataTransfer.files?.[0] ?? null);
+  }
+
+  return (
+    <div className="filePicker">
+      <span>{label}</span>
+      <label
+        className={`dropZone ${dragging ? "dragging" : ""} ${file ? "hasFile" : ""}`}
+        htmlFor={inputId}
+        onDragOver={(event) => {
+          event.preventDefault();
+          if (!disabled) setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+      >
+        <input
+          id={inputId}
+          type="file"
+          accept=".xlsx"
+          disabled={disabled}
+          onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
+        />
+        <span className="fileBadge">XLSX</span>
+        <strong>{file ? file.name : "Выберите или перетащите файл"}</strong>
+        <small>{fileLabel(file)}</small>
+      </label>
+      {error && <small className="fieldError">{error}</small>}
+    </div>
+  );
+}
+
+export function ProcessProgress({
+  active,
+  stage,
+  label
+}: {
+  active: boolean;
+  stage: OperationStage | null;
+  label: string;
+}) {
+  if (!active || !stage) return null;
+  const stages: { id: OperationStage; title: string }[] = [
+    { id: "upload", title: "Загрузка" },
+    { id: "read", title: "Чтение" },
+    { id: "match", title: "Сопоставление" },
+    { id: "prepare", title: "Подготовка аналитики" },
+    { id: "done", title: "Готово" }
+  ];
+  const current = Math.max(0, stages.findIndex((item) => item.id === stage));
+  const remaining = Math.max(0, stages.length - current - 1);
+
+  return (
+    <section className="processPanel" aria-live="polite">
+      <div className="processHeader">
+        <div>
+          <h2>{label || stages[current].title}</h2>
+          <p>{remaining ? `Осталось этапов: ${remaining}` : "Завершаю обработку"}</p>
+        </div>
+        <div className="spinner" aria-hidden="true" />
+      </div>
+      <div className="processTrack" aria-hidden="true">
+        <span style={{ width: `${((current + 1) / stages.length) * 100}%` }} />
+      </div>
+      <div className="processSteps">
+        {stages.map((item, index) => (
+          <div className={`processStep ${index < current ? "done" : ""} ${index === current ? "active" : ""}`} key={item.id}>
+            <span>{index + 1}</span>
+            <strong>{item.title}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 export function SelectField({
@@ -353,6 +476,69 @@ export function StatusRulesPanel({
         ))}
       </div>
     </section>
+  );
+}
+
+export function StatusRulesModal({
+  open,
+  setup,
+  statusRules,
+  loading,
+  onChange,
+  onCancel,
+  onConfirm
+}: {
+  open: boolean;
+  setup: AnalyzeSetup;
+  statusRules: Record<string, string>;
+  loading: boolean;
+  onChange: (rules: Record<string, string>) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  if (!open) return null;
+  const count = setup.unknown_statuses.length;
+
+  return (
+    <div className="modalOverlay" role="dialog" aria-modal="true" aria-labelledby="status-modal-title">
+      <section className="modalPanel">
+        <div className="modalHeader">
+          <div>
+            <h2 id="status-modal-title">Проверь статусы перед аналитикой</h2>
+            <p>{count} {count === 1 ? "статус требует" : "статуса требуют"} ручного выбора группы</p>
+          </div>
+          <button className="ghostButton iconButton" type="button" disabled={loading} onClick={onCancel} aria-label="Закрыть">
+            x
+          </button>
+        </div>
+        <div className="rulesGrid modalRules">
+          {setup.unknown_statuses.map((status) => (
+            <label className="ruleRow" key={status}>
+              <span>{status}</span>
+              <select
+                value={statusRules[status] ?? setup.status_groups[0]}
+                disabled={loading}
+                onChange={(event) => onChange({ ...statusRules, [status]: event.target.value })}
+              >
+                {setup.status_groups.map((group) => (
+                  <option value={group} key={group}>
+                    {group}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+        <div className="modalFooter">
+          <button className="ghostButton" type="button" disabled={loading} onClick={onCancel}>
+            Вернуться
+          </button>
+          <button type="button" disabled={loading} onClick={onConfirm}>
+            Запустить аналитику
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 

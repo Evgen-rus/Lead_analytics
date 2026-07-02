@@ -58,3 +58,5 @@ export type AnalyzeSetup = {
 };
 
 export type Step = "upload" | "mapping" | "analyze" | "done";
+
+export type OperationStage = "upload" | "read" | "match" | "prepare" | "done";
