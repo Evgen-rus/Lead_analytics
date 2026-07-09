@@ -1,4 +1,4 @@
-import { DragEvent, useId, useMemo, useRef, useState } from "react";
+import { DragEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import { API, projectQuery } from "./api";
 import type {
   AnalyzeSetup,
@@ -7,6 +7,7 @@ import type {
   Mapping,
   OperationStage,
   SheetPreview,
+  StatusRulesData,
   Step,
   WorkbookPreview
 } from "./types";
@@ -597,6 +598,200 @@ export function StatusRulesModal({
           <button type="button" disabled={loading} onClick={onConfirm}>
             Запустить аналитику
           </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+export function StatusRulesManager({
+  open,
+  project,
+  data,
+  loading,
+  onClose,
+  onSave,
+  onDelete
+}: {
+  open: boolean;
+  project: string;
+  data: StatusRulesData | null;
+  loading: boolean;
+  onClose: () => void;
+  onSave: (ruleId: number, groupName: string) => Promise<void>;
+  onDelete: (ruleId: number) => Promise<void>;
+}) {
+  const [search, setSearch] = useState("");
+  const [drafts, setDrafts] = useState<Record<number, string>>({});
+  const [deletingRule, setDeletingRule] = useState<number | null>(null);
+
+  useEffect(() => {
+    setDrafts(
+      Object.fromEntries(
+        (data?.project_rules ?? [])
+          .filter((rule) => rule.id !== null)
+          .map((rule) => [rule.id as number, rule.group_name])
+      )
+    );
+  }, [data]);
+
+  useEffect(() => {
+    if (!open) {
+      setSearch("");
+      setDeletingRule(null);
+    }
+  }, [open]);
+
+  if (!open) return null;
+  const query = search.trim().toLocaleLowerCase("ru");
+  const matches = (pattern: string, group: string) =>
+    !query ||
+    pattern.toLocaleLowerCase("ru").includes(query) ||
+    group.toLocaleLowerCase("ru").includes(query);
+  const projectRules = (data?.project_rules ?? []).filter((rule) => matches(rule.pattern, rule.group_name));
+  const systemRules = (data?.system_rules ?? []).filter((rule) => matches(rule.pattern, rule.group_name));
+
+  return (
+    <div className="modalOverlay" role="dialog" aria-modal="true" aria-labelledby="rules-manager-title">
+      <section className="modalPanel rulesManagerModal">
+        <div className="modalHeader">
+          <div>
+            <h2 id="rules-manager-title">Соответствия статусов</h2>
+            <p>{project}</p>
+          </div>
+          <button className="ghostButton iconButton" type="button" disabled={loading} onClick={onClose} aria-label="Закрыть">
+            x
+          </button>
+        </div>
+
+        <label className="field rulesSearch">
+          <span>Поиск по статусу или группе</span>
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Начните вводить..." />
+        </label>
+
+        <div className="rulesSectionHeader">
+          <div>
+            <h2>Правила проекта</h2>
+            <p>Изменения применяются только к будущим аналитикам</p>
+          </div>
+          <strong>{projectRules.length}</strong>
+        </div>
+        {projectRules.length === 0 ? (
+          <div className="emptyState">
+            <strong>Соответствия не найдены</strong>
+            <span>{query ? "Измените строку поиска." : "Для этого проекта пока нет сохраненных соответствий."}</span>
+          </div>
+        ) : (
+          <div className="tableWrap rulesTableWrap">
+            <table className="rulesTable">
+              <thead>
+                <tr>
+                  <th>Исходный статус</th>
+                  <th>Группа</th>
+                  <th>Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {projectRules.map((rule) => {
+                  const ruleId = rule.id as number;
+                  const draft = drafts[ruleId] ?? rule.group_name;
+                  const changed = draft !== rule.group_name;
+                  return (
+                    <tr key={ruleId}>
+                      <td title={rule.pattern}>{rule.pattern}</td>
+                      <td>
+                        <select
+                          value={draft}
+                          disabled={loading}
+                          onChange={(event) => setDrafts({ ...drafts, [ruleId]: event.target.value })}
+                        >
+                          {(data?.status_groups ?? []).map((group) => (
+                            <option value={group} key={group}>{group}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <div className="ruleActions">
+                          <button
+                            type="button"
+                            disabled={loading || !changed}
+                            onClick={() => onSave(ruleId, draft)}
+                          >
+                            Сохранить
+                          </button>
+                          <button
+                            className="dangerButton"
+                            type="button"
+                            disabled={loading}
+                            onClick={() => setDeletingRule(ruleId)}
+                          >
+                            Удалить
+                          </button>
+                        </div>
+                        {deletingRule === ruleId && (
+                          <div className="inlineConfirm">
+                            <span>Удалить это соответствие?</span>
+                            <button
+                              className="dangerButton"
+                              type="button"
+                              disabled={loading}
+                              onClick={async () => {
+                                await onDelete(ruleId);
+                                setDeletingRule(null);
+                              }}
+                            >
+                              Да
+                            </button>
+                            <button
+                              className="ghostButton"
+                              type="button"
+                              disabled={loading}
+                              onClick={() => setDeletingRule(null)}
+                            >
+                              Нет
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="rulesSectionHeader systemRulesHeader">
+          <div>
+            <h2>Системные правила</h2>
+            <p>Используются автоматически и доступны только для просмотра</p>
+          </div>
+          <strong>{systemRules.length}</strong>
+        </div>
+        <div className="tableWrap rulesTableWrap systemRulesTableWrap">
+          <table className="rulesTable">
+            <thead>
+              <tr>
+                <th>Шаблон</th>
+                <th>Группа</th>
+                <th>Тип</th>
+              </tr>
+            </thead>
+            <tbody>
+              {systemRules.map((rule, index) => (
+                <tr key={`${rule.source}-${rule.id ?? index}-${rule.pattern}`}>
+                  <td title={rule.pattern}>{rule.pattern}</td>
+                  <td>{rule.group_name}</td>
+                  <td>{rule.match_type}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="modalFooter">
+          <span />
+          <button className="ghostButton" type="button" disabled={loading} onClick={onClose}>Закрыть</button>
         </div>
       </section>
     </div>

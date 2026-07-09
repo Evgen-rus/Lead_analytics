@@ -1,4 +1,12 @@
-import type { AnalyzeSetup, ExportRecord, Mapping, UploadResponse, WorkbookPreview } from "./types";
+import type {
+  AnalyzeSetup,
+  ExportRecord,
+  Mapping,
+  StatusRuleItem,
+  StatusRulesData,
+  UploadResponse,
+  WorkbookPreview
+} from "./types";
 
 export const API = "/api";
 
@@ -21,6 +29,29 @@ export async function fetchProjects(): Promise<string[]> {
 
 export async function fetchExports(project: string): Promise<ExportRecord[]> {
   return jsonRequest<ExportRecord[]>(`${API}/exports?${projectQuery(project)}`, { method: "GET" });
+}
+
+export async function fetchStatusRules(project: string): Promise<StatusRulesData> {
+  return jsonRequest<StatusRulesData>(`${API}/status-rules?${projectQuery(project)}`, { method: "GET" });
+}
+
+export async function updateStatusRule(
+  ruleId: number,
+  project: string,
+  groupName: string
+): Promise<StatusRuleItem> {
+  return jsonRequest<StatusRuleItem>(`${API}/status-rules/${ruleId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project, group_name: groupName })
+  });
+}
+
+export async function deleteStatusRule(ruleId: number, project: string): Promise<void> {
+  await jsonRequest<{ deleted: boolean }>(
+    `${API}/status-rules/${ruleId}?${projectQuery(project)}`,
+    { method: "DELETE" }
+  );
 }
 
 export async function uploadRun(project: string, lkFile: File, clientFile: File): Promise<UploadResponse> {

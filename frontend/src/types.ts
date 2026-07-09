@@ -57,6 +57,21 @@ export type AnalyzeSetup = {
   status_groups: string[];
 };
 
+export type StatusRuleItem = {
+  id: number | null;
+  pattern: string;
+  match_type: string;
+  group_name: string;
+  priority: number;
+  source: "project" | "global" | "default";
+};
+
+export type StatusRulesData = {
+  project_rules: StatusRuleItem[];
+  system_rules: StatusRuleItem[];
+  status_groups: string[];
+};
+
 export type Step = "upload" | "mapping" | "analyze" | "done";
 
 export type OperationStage = "upload" | "read" | "match" | "prepare" | "done";

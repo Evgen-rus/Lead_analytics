@@ -26,7 +26,7 @@ from app.export_history import (
 from app.matcher import match_files
 from app.models import ColumnMapping, StatusRule
 from app.pipeline import analyze_file
-from app.status_classifier import ALL_GROUPS, unknown_statuses
+from app.status_classifier import ALL_GROUPS, load_json_rules, unknown_statuses
 from app.structure_detector import detect_analyze_mapping, detect_match_mapping
 
 RUNS_DIR = DATA_DIR / "runs"
@@ -133,6 +133,26 @@ class AnalyzeSetupResponse(BaseModel):
 class AnalyzeResponse(BaseModel):
     filename: str
     preview: WorkbookPreview
+
+
+class StatusRuleResponse(BaseModel):
+    id: int | None = None
+    pattern: str
+    match_type: str
+    group_name: str
+    priority: int
+    source: Literal["project", "global", "default"]
+
+
+class StatusRulesResponse(BaseModel):
+    project_rules: list[StatusRuleResponse]
+    system_rules: list[StatusRuleResponse]
+    status_groups: list[str]
+
+
+class StatusRuleUpdatePayload(BaseModel):
+    project: str
+    group_name: str
 
 
 def _run_dir(run_id: str) -> Path:
@@ -258,6 +278,89 @@ def health() -> dict[str, str]:
 def projects() -> list[str]:
     db.init_db()
     return db.list_projects()
+
+
+@app.get("/api/status-rules", response_model=StatusRulesResponse)
+def status_rules(project: str) -> StatusRulesResponse:
+    db.init_db()
+    project = project.strip()
+    if not project:
+        raise HTTPException(status_code=400, detail="Укажите проект")
+    project_rules = [
+        StatusRuleResponse(
+            id=row["id"],
+            pattern=row["pattern"],
+            match_type=row["match_type"],
+            group_name=row["group_name"],
+            priority=row["priority"],
+            source="project",
+        )
+        for row in db.list_project_status_rules(project)
+    ]
+    global_rules = [
+        StatusRuleResponse(
+            id=row["id"],
+            pattern=row["pattern"],
+            match_type=row["match_type"],
+            group_name=row["group_name"],
+            priority=row["priority"],
+            source="global",
+        )
+        for row in db.list_global_status_rules()
+    ]
+    default_rules = [
+        StatusRuleResponse(
+            pattern=rule.pattern,
+            match_type=rule.match_type,
+            group_name=rule.group_name,
+            priority=rule.priority,
+            source="default",
+        )
+        for rule in load_json_rules()
+    ]
+    return StatusRulesResponse(
+        project_rules=project_rules,
+        system_rules=global_rules + default_rules,
+        status_groups=ALL_GROUPS,
+    )
+
+
+@app.put("/api/status-rules/{rule_id}", response_model=StatusRuleResponse)
+def update_status_rule(rule_id: int, payload: StatusRuleUpdatePayload) -> StatusRuleResponse:
+    db.init_db()
+    project = payload.project.strip()
+    group_name = payload.group_name.strip()
+    if not project:
+        raise HTTPException(status_code=400, detail="Укажите проект")
+    if group_name not in ALL_GROUPS:
+        raise HTTPException(status_code=400, detail="Неизвестная группа статуса")
+    if not db.update_project_status_rule_group(rule_id, project, group_name):
+        raise HTTPException(status_code=404, detail="Правило проекта не найдено")
+    row = next(
+        (item for item in db.list_project_status_rules(project) if item["id"] == rule_id),
+        None,
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Правило проекта не найдено")
+    return StatusRuleResponse(
+        id=row["id"],
+        pattern=row["pattern"],
+        match_type=row["match_type"],
+        group_name=row["group_name"],
+        priority=row["priority"],
+        source="project",
+    )
+
+
+@app.delete("/api/status-rules/{rule_id}")
+def delete_status_rule(rule_id: int, project: str) -> dict[str, bool]:
+    db.init_db()
+    project = project.strip()
+    if not project:
+        raise HTTPException(status_code=400, detail="Укажите проект")
+    if not db.delete_project_status_rule(rule_id, project):
+        raise HTTPException(status_code=404, detail="Правило проекта не найдено")
+    return {"deleted": True}
 
 
 @app.get("/api/exports", response_model=list[ExportRecord])

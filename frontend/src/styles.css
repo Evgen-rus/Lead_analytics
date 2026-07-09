@@ -725,6 +725,83 @@ tbody tr:nth-child(even) {
   font-weight: 800;
 }
 
+.rulesManagerModal {
+  width: min(1120px, 100%);
+}
+
+.rulesSearch {
+  margin-bottom: 18px;
+}
+
+.rulesSectionHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 14px 0 10px;
+}
+
+.rulesSectionHeader > strong {
+  min-width: 34px;
+  border-radius: 999px;
+  background: #e7f3f7;
+  color: #0b536d;
+  padding: 5px 9px;
+  text-align: center;
+}
+
+.systemRulesHeader {
+  margin-top: 24px;
+}
+
+.rulesTableWrap {
+  max-height: 360px;
+}
+
+.systemRulesTableWrap {
+  max-height: 280px;
+}
+
+.rulesTable {
+  min-width: 820px;
+}
+
+.rulesTable th:first-child,
+.rulesTable td:first-child {
+  width: 48%;
+  white-space: normal;
+}
+
+.rulesTable select {
+  min-width: 220px;
+}
+
+.ruleActions,
+.inlineConfirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ruleActions button {
+  min-height: 34px;
+  padding: 6px 10px;
+}
+
+.inlineConfirm {
+  margin-top: 8px;
+  color: #912018;
+}
+
+.inlineConfirm span {
+  white-space: normal;
+}
+
+.inlineConfirm button {
+  min-height: 30px;
+  padding: 4px 8px;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -776,6 +853,42 @@ tbody tr:nth-child(even) {
   .modalFooter {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .rulesSectionHeader {
+    align-items: center;
+  }
+
+  .rulesTable {
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .rulesTable th,
+  .rulesTable td,
+  .rulesTable th:first-child,
+  .rulesTable td:first-child {
+    width: auto;
+    max-width: none;
+    white-space: normal;
+  }
+
+  .rulesTable select {
+    min-width: 0;
+  }
+
+  .ruleActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ruleActions button {
+    width: 100%;
+  }
+
+  .inlineConfirm {
+    align-items: stretch;
+    flex-wrap: wrap;
   }
 
   .stepper,

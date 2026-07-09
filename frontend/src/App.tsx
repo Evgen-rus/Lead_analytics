@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  deleteStatusRule,
   deleteExportRequest,
   downloadUrl,
   fetchAnalyzeSetup,
   fetchExports,
   fetchProjects,
+  fetchStatusRules,
   runAnalyzeRequest,
   runMatchRequest,
+  updateStatusRule,
   uploadRun
 } from "./api";
 import {
@@ -17,11 +20,21 @@ import {
   MatchSummary,
   ProcessProgress,
   ProjectCombo,
+  StatusRulesManager,
   StatusRulesModal,
   Stepper,
   WorkbookViewer
 } from "./components";
-import type { AnalyzeSetup, ExportRecord, Mapping, OperationStage, Step, UploadResponse, WorkbookPreview } from "./types";
+import type {
+  AnalyzeSetup,
+  ExportRecord,
+  Mapping,
+  OperationStage,
+  StatusRulesData,
+  Step,
+  UploadResponse,
+  WorkbookPreview
+} from "./types";
 
 const emptyMapping: Mapping = { sheet_name: "" };
 
@@ -59,6 +72,9 @@ export default function App() {
   const [error, setError] = useState("");
   const [deletingExport, setDeletingExport] = useState<number | null>(null);
   const [statusModalOpen, setStatusModalOpen] = useState(false);
+  const [rulesManagerOpen, setRulesManagerOpen] = useState(false);
+  const [rulesData, setRulesData] = useState<StatusRulesData | null>(null);
+  const [rulesLoading, setRulesLoading] = useState(false);
 
   const canUpload = useMemo(() => project.trim() && lkFile && clientFile, [project, lkFile, clientFile]);
   const canMatch = useMemo(
@@ -80,6 +96,8 @@ export default function App() {
     } else {
       setSavedExports([]);
     }
+    setRulesManagerOpen(false);
+    setRulesData(null);
   }, [project]);
 
   async function refreshProjects() {
@@ -228,6 +246,53 @@ export default function App() {
     }
   }
 
+  async function openRulesManager() {
+    if (!project.trim()) return;
+    setRulesManagerOpen(true);
+    setRulesLoading(true);
+    setError("");
+    try {
+      setRulesData(await fetchStatusRules(project));
+    } catch (err) {
+      setRulesManagerOpen(false);
+      setError(err instanceof Error ? err.message : "Не удалось загрузить соответствия статусов");
+    } finally {
+      setRulesLoading(false);
+    }
+  }
+
+  async function saveStatusRule(ruleId: number, groupName: string) {
+    setRulesLoading(true);
+    setError("");
+    try {
+      const updated = await updateStatusRule(ruleId, project, groupName);
+      setRulesData((current) => current ? {
+        ...current,
+        project_rules: current.project_rules.map((rule) => rule.id === ruleId ? updated : rule)
+      } : current);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось сохранить соответствие");
+    } finally {
+      setRulesLoading(false);
+    }
+  }
+
+  async function removeStatusRule(ruleId: number) {
+    setRulesLoading(true);
+    setError("");
+    try {
+      await deleteStatusRule(ruleId, project);
+      setRulesData((current) => current ? {
+        ...current,
+        project_rules: current.project_rules.filter((rule) => rule.id !== ruleId)
+      } : current);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось удалить соответствие");
+    } finally {
+      setRulesLoading(false);
+    }
+  }
+
   return (
     <main>
       <section className="topbar">
@@ -253,9 +318,14 @@ export default function App() {
                 <h2>Проект и файлы</h2>
                 <p>Выбери проект, нашу выгрузку и выгрузку клиента</p>
               </div>
-              <button onClick={uploadFiles} disabled={!canUpload || loading}>
-                Загрузить и проверить
-              </button>
+              <div className="actions">
+                <button className="ghostButton" onClick={openRulesManager} disabled={!project.trim() || loading}>
+                  Соответствия статусов
+                </button>
+                <button onClick={uploadFiles} disabled={!canUpload || loading}>
+                  Загрузить и проверить
+                </button>
+              </div>
             </div>
             <div className="uploadGrid">
               <label className="field">
@@ -425,6 +495,15 @@ export default function App() {
           />
         </>
       )}
+      <StatusRulesManager
+        open={rulesManagerOpen}
+        project={project}
+        data={rulesData}
+        loading={rulesLoading}
+        onClose={() => setRulesManagerOpen(false)}
+        onSave={saveStatusRule}
+        onDelete={removeStatusRule}
+      />
     </main>
   );
 }

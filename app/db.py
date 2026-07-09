@@ -6,14 +6,14 @@ from app.config import DB_PATH, ensure_dirs
 from app.models import ColumnMapping, StatusRule
 
 
-def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
+def connect(db_path: Path | None = None) -> sqlite3.Connection:
     ensure_dirs()
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path or DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 
-def init_db(db_path: Path = DB_PATH) -> None:
+def init_db(db_path: Path | None = None) -> None:
     with connect(db_path) as conn:
         conn.executescript(
             """
@@ -40,6 +40,7 @@ def init_db(db_path: Path = DB_PATH) -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_code TEXT,
                 pattern TEXT NOT NULL,
+                pattern_key TEXT,
                 match_type TEXT NOT NULL,
                 group_name TEXT NOT NULL,
                 subgroup_name TEXT,
@@ -119,10 +120,46 @@ def init_db(db_path: Path = DB_PATH) -> None:
             );
             """
         )
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(status_rules)")}
+        if "pattern_key" not in columns:
+            conn.execute("ALTER TABLE status_rules ADD COLUMN pattern_key TEXT")
+        conn.execute("DROP INDEX IF EXISTS uq_status_rules_project_pattern")
+        rows = conn.execute(
+            """
+            SELECT id, project_code, pattern
+            FROM status_rules
+            ORDER BY priority ASC, id ASC
+            """
+        ).fetchall()
+        seen: set[tuple[str, str]] = set()
+        for row in rows:
+            pattern_key = normalize_status_pattern(row["pattern"])
+            project = row["project_code"]
+            key = (project, pattern_key) if project is not None else None
+            if key is not None and key in seen:
+                conn.execute("DELETE FROM status_rules WHERE id = ?", (row["id"],))
+                continue
+            if key is not None:
+                seen.add(key)
+            conn.execute(
+                "UPDATE status_rules SET pattern_key = ? WHERE id = ?",
+                (pattern_key, row["id"]),
+            )
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_status_rules_project_pattern
+            ON status_rules(project_code, pattern_key)
+            WHERE project_code IS NOT NULL
+            """
+        )
 
 
 def now_text() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def normalize_status_pattern(pattern: str) -> str:
+    return pattern.strip().casefold()
 
 
 def ensure_project(project: str) -> None:
@@ -256,17 +293,51 @@ def save_match_mapping(project: str, file_role: str, mapping: ColumnMapping) -> 
 
 def add_status_rule(rule: StatusRule) -> None:
     stamp = now_text()
+    pattern_key = normalize_status_pattern(rule.pattern)
     with connect() as conn:
+        if rule.project_code is not None:
+            existing = conn.execute(
+                """
+                SELECT id FROM status_rules
+                WHERE project_code = ?
+                  AND pattern_key = ?
+                ORDER BY priority ASC, id ASC
+                LIMIT 1
+                """,
+                (rule.project_code, pattern_key),
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    """
+                    UPDATE status_rules
+                    SET pattern = ?, pattern_key = ?, match_type = ?, group_name = ?, subgroup_name = ?,
+                        comment = ?, priority = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        rule.pattern,
+                        pattern_key,
+                        rule.match_type,
+                        rule.group_name,
+                        rule.subgroup_name,
+                        rule.comment,
+                        rule.priority,
+                        stamp,
+                        existing["id"],
+                    ),
+                )
+                return
         conn.execute(
             """
             INSERT INTO status_rules(
-                project_code, pattern, match_type, group_name, subgroup_name,
-                comment, priority, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                project_code, pattern, pattern_key, match_type, group_name,
+                subgroup_name, comment, priority, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 rule.project_code,
                 rule.pattern,
+                pattern_key,
                 rule.match_type,
                 rule.group_name,
                 rule.subgroup_name,
@@ -294,6 +365,55 @@ def list_status_rules(project: str | None = None) -> list[sqlite3.Row]:
         return list(conn.execute("SELECT * FROM status_rules ORDER BY id ASC"))
 
 
+def list_project_status_rules(project: str) -> list[sqlite3.Row]:
+    with connect() as conn:
+        return list(
+            conn.execute(
+                """
+                SELECT * FROM status_rules
+                WHERE project_code = ?
+                ORDER BY pattern COLLATE NOCASE ASC, id ASC
+                """,
+                (project,),
+            )
+        )
+
+
+def list_global_status_rules() -> list[sqlite3.Row]:
+    with connect() as conn:
+        return list(
+            conn.execute(
+                """
+                SELECT * FROM status_rules
+                WHERE project_code IS NULL
+                ORDER BY priority ASC, id ASC
+                """
+            )
+        )
+
+
+def update_project_status_rule_group(rule_id: int, project: str, group_name: str) -> bool:
+    with connect() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE status_rules
+            SET group_name = ?, updated_at = ?
+            WHERE id = ? AND project_code = ?
+            """,
+            (group_name, now_text(), rule_id, project),
+        )
+    return cursor.rowcount > 0
+
+
+def delete_project_status_rule(rule_id: int, project: str) -> bool:
+    with connect() as conn:
+        cursor = conn.execute(
+            "DELETE FROM status_rules WHERE id = ? AND project_code = ?",
+            (rule_id, project),
+        )
+    return cursor.rowcount > 0
+
+
 def update_status_rule(rule_id: int, **fields: str | int | None) -> None:
     allowed = {"pattern", "match_type", "group_name", "subgroup_name", "comment", "priority"}
     assignments = []
@@ -302,6 +422,9 @@ def update_status_rule(rule_id: int, **fields: str | int | None) -> None:
         if key in allowed and value is not None:
             assignments.append(f"{key} = ?")
             values.append(value)
+            if key == "pattern":
+                assignments.append("pattern_key = ?")
+                values.append(normalize_status_pattern(str(value)))
     if not assignments:
         return
     assignments.append("updated_at = ?")
