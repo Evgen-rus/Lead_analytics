@@ -15,7 +15,7 @@ python -m venv .venv
 Backend:
 
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
+.\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8001
 ```
 
 Frontend:
@@ -26,7 +26,10 @@ npm.cmd install
 npm.cmd run dev
 ```
 
-После запуска откройте `http://localhost:5173`.
+После запуска откройте `http://localhost:5174`.
+
+Порты `8001` (backend) и `5174` (frontend) выбраны специально, чтобы не конфликтовать
+с другим локальным проектом на `8000` / `5173`.
 
 В веб-интерфейсе можно загрузить файл из ЛК и файл клиента, проверить найденные колонки,
 запустить сопоставление, выбрать группы для неизвестных статусов, посмотреть предпросмотр
