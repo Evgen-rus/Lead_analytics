@@ -106,14 +106,19 @@ def _clean_text(value: object) -> str:
     return str(value).strip()
 
 
-def classify(status: object, comment: object = None, project: str = "") -> tuple[str, str]:
+def classify(
+    status: object,
+    comment: object = None,
+    project: str = "",
+    rules: list[StatusRule] | None = None,
+) -> tuple[str, str]:
     status_text = _clean_text(status)
     comment_text = _clean_text(comment)
     text = " ".join(part for part in [status_text, comment_text] if part)
     if not text.strip():
         return "Не учитывать", "пустой статус"
-    rules = sorted_rules(project)
-    for rule in rules:
+    active_rules = rules if rules is not None else sorted_rules(project)
+    for rule in active_rules:
         if _match(rule, text, status_text):
             return rule.group_name, rule.pattern
     if re.search(r"[\w.\-]+@[\w.\-]+\.\w+", text):
@@ -123,8 +128,9 @@ def classify(status: object, comment: object = None, project: str = "") -> tuple
 
 def unknown_statuses(statuses: list[object], project: str) -> list[str]:
     result = []
+    rules = sorted_rules(project)
     for value in sorted({_clean_text(status) for status in statuses if _clean_text(status)}):
-        group, _ = classify(value, None, project)
+        group, _ = classify(value, None, project, rules)
         if group == "Требует проверки":
             result.append(value)
     return result

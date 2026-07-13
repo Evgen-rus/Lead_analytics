@@ -12,7 +12,7 @@ from app.export_history import ExportMetadata, save_analysis_export
 from app.models import ColumnMapping
 from app.report_writer import write_excel
 from app.source_utils import NO_DATA, normalize_source, safe_filename
-from app.status_classifier import classify
+from app.status_classifier import classify, sorted_rules
 
 
 ProgressCallback = Callable[[str, int, int], None]
@@ -40,12 +40,13 @@ def analyze_file(
     data["Комментарий"] = df[mapping.comment_column] if mapping.comment_column else ""
     total_rows = len(data)
     classifications = []
+    rules = sorted_rules(project)
     if progress:
         progress("Анализ статусов", 0, total_rows)
     for position, (status, comment) in enumerate(
         zip(data["Исходный статус"], data["Комментарий"]), start=1
     ):
-        classifications.append(classify(status, comment, project))
+        classifications.append(classify(status, comment, project, rules))
         if progress:
             progress("Анализ статусов", position, total_rows)
     data["Группа статуса"] = [item[0] for item in classifications]

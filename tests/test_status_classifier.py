@@ -1,4 +1,5 @@
-from app.status_classifier import classify, unknown_statuses
+from app import status_classifier
+from app.status_classifier import classify, sorted_rules, unknown_statuses
 
 
 def test_default_status_rules():
@@ -17,3 +18,14 @@ def test_missing_statuses_are_not_counted():
     assert unknown_statuses([None, "", float("nan"), "nan", "совсем новый статус"], "x") == [
         "совсем новый статус"
     ]
+
+
+def test_classify_uses_preloaded_rules_without_reloading(monkeypatch):
+    rules = sorted_rules("x")
+
+    def unexpected_reload(project):
+        raise AssertionError(f"Правила не должны загружаться повторно для {project}")
+
+    monkeypatch.setattr(status_classifier, "sorted_rules", unexpected_reload)
+
+    assert classify("Заявка принята", project="x", rules=rules)[0] == "Качественные"
