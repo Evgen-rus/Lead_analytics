@@ -525,9 +525,12 @@ export function StatusRulesPanel({
           <label className="ruleRow" key={status}>
             <span>{status}</span>
             <select
-              value={statusRules[status] ?? setup.status_groups[0]}
+              value={statusRules[status] ?? ""}
               onChange={(event) => onChange({ ...statusRules, [status]: event.target.value })}
             >
+              <option value="" disabled>
+                Выберите группу
+              </option>
               {setup.status_groups.map((group) => (
                 <option value={group} key={group}>
                   {group}
@@ -560,6 +563,7 @@ export function StatusRulesModal({
 }) {
   if (!open) return null;
   const count = setup.unknown_statuses.length;
+  const missingCount = setup.unknown_statuses.filter((status) => !statusRules[status]).length;
 
   return (
     <div className="modalOverlay" role="dialog" aria-modal="true" aria-labelledby="status-modal-title">
@@ -578,10 +582,13 @@ export function StatusRulesModal({
             <label className="ruleRow" key={status}>
               <span>{status}</span>
               <select
-                value={statusRules[status] ?? setup.status_groups[0]}
+                value={statusRules[status] ?? ""}
                 disabled={loading}
                 onChange={(event) => onChange({ ...statusRules, [status]: event.target.value })}
               >
+                <option value="" disabled>
+                  Выберите группу
+                </option>
                 {setup.status_groups.map((group) => (
                   <option value={group} key={group}>
                     {group}
@@ -591,11 +598,14 @@ export function StatusRulesModal({
             </label>
           ))}
         </div>
+        {missingCount > 0 && (
+          <p className="formHint">Осталось выбрать групп: {missingCount}</p>
+        )}
         <div className="modalFooter">
           <button className="ghostButton" type="button" disabled={loading} onClick={onCancel}>
             Вернуться
           </button>
-          <button type="button" disabled={loading} onClick={onConfirm}>
+          <button type="button" disabled={loading || missingCount > 0} onClick={onConfirm}>
             Запустить аналитику
           </button>
         </div>

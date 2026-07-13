@@ -718,6 +718,12 @@ tbody tr:nth-child(even) {
   overflow: auto;
 }
 
+.formHint {
+  margin: 12px 0 0;
+  color: #667085;
+  font-size: 14px;
+}
+
 .iconButton {
   width: 36px;
   min-height: 36px;

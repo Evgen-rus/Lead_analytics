@@ -170,7 +170,7 @@ export default function App() {
       const setup = await fetchAnalyzeSetup(upload.run_id, project);
       setAnalyzeSetup(setup);
       setAnalyzeMapping(normalizeMapping(setup.mapping, setup.sheets[0]?.name ?? ""));
-      setStatusRules(Object.fromEntries(setup.unknown_statuses.map((status) => [status, setup.status_groups[0] ?? "Качественные"])));
+      setStatusRules({});
       setStep("analyze");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось сопоставить файлы");
@@ -192,6 +192,12 @@ export default function App() {
 
   async function runAnalyze() {
     if (!upload || !canAnalyze) return;
+    const missingStatusRules = analyzeSetup?.unknown_statuses.filter((status) => !statusRules[status]);
+    if (missingStatusRules?.length) {
+      setStatusModalOpen(true);
+      setError("Выберите группу для каждого неизвестного статуса перед аналитикой");
+      return;
+    }
     setStatusModalOpen(false);
     setLoading(true);
     setOperation("Формирую аналитику и сохраняю выгрузку");

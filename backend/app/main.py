@@ -274,6 +274,22 @@ def _validate_excel(file: UploadFile) -> None:
         raise HTTPException(status_code=400, detail=f"Файл {name} должен быть .xlsx")
 
 
+def _validate_unknown_status_rules(unknown: list[str], status_rules: dict[str, str]) -> None:
+    missing = [status for status in unknown if not status_rules.get(status, "").strip()]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail="Выберите группу для каждого неизвестного статуса перед аналитикой",
+        )
+    invalid_groups = [
+        group
+        for status, group in status_rules.items()
+        if status.strip() and group.strip() and group.strip() not in ALL_GROUPS
+    ]
+    if invalid_groups:
+        raise HTTPException(status_code=400, detail="Неизвестная группа статуса")
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -492,6 +508,11 @@ def run_analyze(run_id: str, payload: AnalyzePayload) -> AnalyzeResponse:
     if not mapping.status_column:
         raise HTTPException(status_code=400, detail="Для аналитики нужен статус")
 
+    input_file = _output_file(run_id, "match")
+    df = read_excel_sheet(input_file, mapping.sheet_name)
+    unknown = unknown_statuses(df[mapping.status_column].tolist(), project)
+    _validate_unknown_status_rules(unknown, payload.status_rules)
+
     db.init_db()
     db.ensure_project(project)
     db.save_column_mapping(project, mapping)
@@ -507,7 +528,6 @@ def run_analyze(run_id: str, payload: AnalyzePayload) -> AnalyzeResponse:
                     comment="Добавлено через web",
                 )
             )
-    input_file = _output_file(run_id, "match")
     try:
         output = analyze_file(
             project,
