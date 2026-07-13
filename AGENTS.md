@@ -39,3 +39,15 @@ cd frontend; npm.cmd run dev
 - Ask before destructive or externally visible actions (including database schema
   changes, deleting exports/rules, `git reset`, force-push, or network uploads).
 - Keep changes minimal and verify them with the relevant commands above.
+
+## Unknowns discovery
+
+- Для новых модулей, изменений архитектуры, схемы данных, аналитической методики,
+  поведения AI-агента, сложного интерфейса или неясных требований сначала используй
+  skill `$unknowns-discovery`.
+- Не начинай реализацию, пока не отделены подтверждённые факты, решения пользователя,
+  неизвестные и предположения.
+- Вопросы задавай по одному и только если ответ способен изменить архитектуру,
+  данные, пользовательский сценарий, достоверность вывода или стоимость переделки.
+- Для мелких и полностью определённых задач не запускай полный discovery-цикл.
+- Проектный контекст находится в `docs/agent/PROJECT_CONTEXT.md`.
