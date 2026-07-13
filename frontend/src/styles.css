@@ -209,6 +209,13 @@ p {
   align-items: flex-start;
 }
 
+.resumeJobPanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .sectionBar {
   margin-top: 8px;
   font-weight: 700;
@@ -849,6 +856,7 @@ tbody tr:nth-child(even) {
   }
 
   .topbar,
+  .resumeJobPanel,
   .panelHeader,
   .sectionBar,
   .previewHeader,

@@ -5,10 +5,12 @@ import {
   downloadUrl,
   fetchAnalyzeSetup,
   fetchExports,
+  fetchProcessingJob,
+  fetchProcessingJobPreview,
   fetchProjects,
   fetchStatusRules,
-  runAnalyzeRequest,
-  runMatchRequest,
+  queueAnalyzeJob,
+  queueMatchJob,
   updateStatusRule,
   uploadRun
 } from "./api";
@@ -30,6 +32,7 @@ import type {
   ExportRecord,
   Mapping,
   OperationStage,
+  ProcessingJob,
   StatusRulesData,
   Step,
   UploadResponse,
@@ -75,6 +78,7 @@ export default function App() {
   const [rulesManagerOpen, setRulesManagerOpen] = useState(false);
   const [rulesData, setRulesData] = useState<StatusRulesData | null>(null);
   const [rulesLoading, setRulesLoading] = useState(false);
+  const [activeJob, setActiveJob] = useState<ProcessingJob | null>(null);
 
   const canUpload = useMemo(() => project.trim() && lkFile && clientFile, [project, lkFile, clientFile]);
   const canMatch = useMemo(
@@ -88,7 +92,32 @@ export default function App() {
 
   useEffect(() => {
     refreshProjects();
+    const storedJobId = Number(localStorage.getItem("lead-analytics.active-job"));
+    if (Number.isInteger(storedJobId) && storedJobId > 0) {
+      fetchProcessingJob(storedJobId)
+        .then((job) => {
+          setActiveJob(job);
+          setLoading(job.status === "queued" || job.status === "running");
+        })
+        .catch(() => localStorage.removeItem("lead-analytics.active-job"));
+    }
   }, []);
+
+  useEffect(() => {
+    if (!activeJob || !["queued", "running"].includes(activeJob.status)) return;
+    const timer = window.setInterval(() => {
+      fetchProcessingJob(activeJob.id)
+        .then((job) => {
+          setActiveJob(job);
+          if (job.status === "completed" || job.status === "failed") {
+            localStorage.removeItem("lead-analytics.active-job");
+            setLoading(false);
+          }
+        })
+        .catch(() => undefined);
+    }, 700);
+    return () => window.clearInterval(timer);
+  }, [activeJob?.id, activeJob?.status]);
 
   useEffect(() => {
     if (project.trim()) {
@@ -127,7 +156,30 @@ export default function App() {
     setStatusRules({});
     setAnalyzePreview(null);
     setStatusModalOpen(false);
+    setActiveJob(null);
+    localStorage.removeItem("lead-analytics.active-job");
     setStep("upload");
+  }
+
+  function jobStage(job: ProcessingJob): OperationStage {
+    return job.kind === "match" ? "match" : "prepare";
+  }
+
+  async function waitForJob(job: ProcessingJob): Promise<ProcessingJob> {
+    let current = job;
+    setActiveJob(current);
+    localStorage.setItem("lead-analytics.active-job", String(current.id));
+    while (current.status === "queued" || current.status === "running") {
+      setOperation(current.phase || (current.status === "queued" ? "Ожидает в очереди" : "Выполняется"));
+      setOperationStage(jobStage(current));
+      await new Promise((resolve) => window.setTimeout(resolve, 700));
+      current = await fetchProcessingJob(current.id);
+      setActiveJob(current);
+    }
+    localStorage.removeItem("lead-analytics.active-job");
+    if (current.status === "failed") throw new Error(current.error_text || "Задание завершилось с ошибкой");
+    setActiveJob(null);
+    return current;
   }
 
   async function uploadFiles() {
@@ -163,8 +215,9 @@ export default function App() {
     setOperationStage("match");
     setError("");
     try {
-      const data = await runMatchRequest(upload.run_id, project, lkMapping, clientMapping);
-      setMatchPreview(data.preview);
+      const job = await queueMatchJob(upload.run_id, project, lkMapping, clientMapping);
+      const completed = await waitForJob(job);
+      setMatchPreview(await fetchProcessingJobPreview(completed.id));
       setOperation("Определяю колонки аналитики и неизвестные статусы");
       setOperationStage("prepare");
       const setup = await fetchAnalyzeSetup(upload.run_id, project);
@@ -208,7 +261,7 @@ export default function App() {
       if (!Number.isInteger(numberValue) || numberValue <= 0) {
         throw new Error("Укажите положительный номер выгрузки");
       }
-      const data = await runAnalyzeRequest(upload.run_id, {
+      const job = await queueAnalyzeJob(upload.run_id, {
         project,
         mapping: analyzeMapping,
         status_rules: statusRules,
@@ -219,8 +272,9 @@ export default function App() {
         source_file_name: clientFile?.name || matchPreview?.filename || upload.client.filename,
         replace_export: replaceExport
       });
+      const completed = await waitForJob(job);
       setOperationStage("done");
-      setAnalyzePreview(data.preview);
+      setAnalyzePreview(await fetchProcessingJobPreview(completed.id));
       await refreshProjects();
       await refreshExports(project);
       setStep("done");
@@ -313,7 +367,28 @@ export default function App() {
       </section>
 
       <Stepper step={step} />
-      <ProcessProgress active={loading} stage={operationStage} label={operation} />
+      <ProcessProgress
+        active={loading}
+        stage={activeJob ? jobStage(activeJob) : operationStage}
+        label={activeJob?.phase || operation}
+        processedRows={activeJob?.processed_rows}
+        totalRows={activeJob?.total_rows}
+        queued={activeJob?.status === "queued"}
+      />
+      {activeJob?.status === "completed" && (
+        <section className="panel resumeJobPanel">
+          <div>
+            <h2>Задание завершено</h2>
+            <p>{activeJob.output_file_name || "Готовый отчёт доступен для скачивания"}</p>
+          </div>
+          <a className="download" href={downloadUrl(activeJob.run_id, activeJob.kind)}>
+            Скачать отчёт
+          </a>
+        </section>
+      )}
+      {activeJob?.status === "failed" && (
+        <div className="alert">Задание завершилось с ошибкой: {activeJob.error_text || "без подробностей"}</div>
+      )}
       {error && <div className="alert">{error}</div>}
 
       {step === "upload" && (

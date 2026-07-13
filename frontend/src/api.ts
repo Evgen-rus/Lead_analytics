@@ -2,6 +2,7 @@ import type {
   AnalyzeSetup,
   ExportRecord,
   Mapping,
+  ProcessingJob,
   StatusRuleItem,
   StatusRulesData,
   UploadResponse,
@@ -75,6 +76,19 @@ export async function runMatchRequest(
   });
 }
 
+export async function queueMatchJob(
+  runId: string,
+  project: string,
+  lkMapping: Mapping,
+  clientMapping: Mapping
+): Promise<ProcessingJob> {
+  return jsonRequest<ProcessingJob>(`${API}/runs/${runId}/match/jobs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project, lk_mapping: lkMapping, client_mapping: clientMapping })
+  });
+}
+
 export async function fetchAnalyzeSetup(runId: string, project: string): Promise<AnalyzeSetup> {
   return jsonRequest<AnalyzeSetup>(`${API}/runs/${runId}/analyze/setup`, {
     method: "POST",
@@ -102,6 +116,35 @@ export async function runAnalyzeRequest(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
+}
+
+export async function queueAnalyzeJob(
+  runId: string,
+  payload: {
+    project: string;
+    mapping: Mapping;
+    status_rules: Record<string, string>;
+    export_number: number;
+    period_start: string;
+    period_end: string;
+    analysis_date: string | null;
+    source_file_name: string;
+    replace_export: boolean;
+  }
+): Promise<ProcessingJob> {
+  return jsonRequest<ProcessingJob>(`${API}/runs/${runId}/analyze/jobs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+}
+
+export function fetchProcessingJob(jobId: number): Promise<ProcessingJob> {
+  return jsonRequest<ProcessingJob>(`${API}/jobs/${jobId}`, { method: "GET" });
+}
+
+export function fetchProcessingJobPreview(jobId: number): Promise<WorkbookPreview> {
+  return jsonRequest<WorkbookPreview>(`${API}/jobs/${jobId}/preview`, { method: "GET" });
 }
 
 export async function deleteExportRequest(project: string, exportNumber: number): Promise<void> {

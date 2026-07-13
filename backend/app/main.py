@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import shutil
+import threading
 import uuid
 from datetime import date, datetime
 from pathlib import Path
@@ -140,6 +141,18 @@ class AnalyzeResponse(BaseModel):
     preview: WorkbookPreview
 
 
+class JobResponse(BaseModel):
+    id: int
+    run_id: str
+    kind: Literal["match", "analyze"]
+    status: Literal["queued", "running", "completed", "failed"]
+    phase: str
+    processed_rows: int
+    total_rows: int
+    error_text: str | None = None
+    output_file_name: str | None = None
+
+
 class StatusRuleResponse(BaseModel):
     id: int | None = None
     pattern: str
@@ -158,6 +171,9 @@ class StatusRulesResponse(BaseModel):
 class StatusRuleUpdatePayload(BaseModel):
     project: str
     group_name: str
+
+
+JOB_WORKER_LOCK = threading.Lock()
 
 
 def _run_dir(run_id: str) -> Path:
@@ -288,6 +304,117 @@ def _validate_unknown_status_rules(unknown: list[str], status_rules: dict[str, s
     ]
     if invalid_groups:
         raise HTTPException(status_code=400, detail="Неизвестная группа статуса")
+
+
+def _job_response(job: dict[str, object]) -> JobResponse:
+    return JobResponse(
+        id=int(job["id"]),
+        run_id=str(job["run_id"]),
+        kind=str(job["kind"]),
+        status=str(job["status"]),
+        phase=str(job["phase"]),
+        processed_rows=int(job["processed_rows"]),
+        total_rows=int(job["total_rows"]),
+        error_text=str(job["error_text"]) if job["error_text"] else None,
+        output_file_name=str(job["output_file_name"]) if job["output_file_name"] else None,
+    )
+
+
+def _run_processing_job(job: dict[str, object]) -> None:
+    job_id = int(job["id"])
+    run_id = str(job["run_id"])
+    payload = job["payload"]
+    if not isinstance(payload, dict):
+        raise ValueError("Некорректные данные задания")
+    last_progress: tuple[str, int, int] | None = None
+
+    def report(phase: str, current: int, total: int) -> None:
+        nonlocal last_progress
+        previous = last_progress
+        should_save = (
+            previous is None
+            or phase != previous[0]
+            or current == total
+            or current - previous[1] >= max(1, total // 100)
+        )
+        if should_save:
+            db.update_processing_job(
+                job_id,
+                phase=phase,
+                processed_rows=current,
+                total_rows=total,
+            )
+            last_progress = (phase, current, total)
+
+    try:
+        kind = str(job["kind"])
+        if kind == "match":
+            report("Чтение и подготовка файлов", 0, 0)
+            output = match_files(
+                str(payload["project"]),
+                _input_path(run_id, "lk"),
+                _input_path(run_id, "client"),
+                _to_mapping(MappingPayload(**payload["lk_mapping"])),
+                _to_mapping(MappingPayload(**payload["client_mapping"])),
+                _output_dir(run_id),
+                progress=report,
+            )
+        elif kind == "analyze":
+            report("Подготовка аналитики", 0, 0)
+            mapping = _to_mapping(MappingPayload(**payload["mapping"]))
+            for status, group in dict(payload["status_rules"]).items():
+                db.add_status_rule(
+                    StatusRule(
+                        project_code=str(payload["project"]),
+                        pattern=str(status).strip(),
+                        match_type="exact",
+                        group_name=str(group).strip(),
+                        priority=10,
+                        comment="Добавлено через web",
+                    )
+                )
+            output = analyze_file(
+                str(payload["project"]),
+                _output_file(run_id, "match"),
+                mapping,
+                _output_dir(run_id),
+                ExportMetadata(
+                    export_number=int(payload["export_number"]),
+                    period_start=str(payload["period_start"]),
+                    period_end=str(payload["period_end"]),
+                    analysis_date=payload.get("analysis_date"),
+                    source_file_name=str(payload["source_file_name"]),
+                ),
+                replace_export=bool(payload["replace_export"]),
+                progress=report,
+            )
+            shutil.rmtree(_run_dir(run_id) / "input", ignore_errors=True)
+        else:
+            raise ValueError("Неизвестный тип задания")
+        db.update_processing_job(
+            job_id,
+            status="completed",
+            phase="Готово",
+            output_file_name=output.name,
+        )
+    except Exception as exc:
+        db.update_processing_job(job_id, status="failed", phase="Ошибка", error_text=str(exc))
+
+
+def _run_job_worker() -> None:
+    try:
+        while job := db.claim_next_processing_job():
+            _run_processing_job(job)
+    finally:
+        JOB_WORKER_LOCK.release()
+    if db.has_queued_processing_jobs():
+        _start_job_worker()
+
+
+def _start_job_worker() -> None:
+    if not JOB_WORKER_LOCK.acquire(blocking=False):
+        return
+    threading.Thread(target=_run_job_worker, daemon=True, name="lead-analytics-jobs").start()
 
 
 @app.get("/api/health")
@@ -480,6 +607,35 @@ def run_match(run_id: str, payload: MatchPayload) -> MatchResponse:
     return MatchResponse(filename=output.name, preview=_preview_workbook(output))
 
 
+@app.post("/api/runs/{run_id}/match/jobs", response_model=JobResponse)
+def queue_match(run_id: str, payload: MatchPayload) -> JobResponse:
+    project = payload.project.strip()
+    if not project:
+        raise HTTPException(status_code=400, detail="Укажите проект")
+    lk_mapping = _to_mapping(payload.lk_mapping)
+    client_mapping = _to_mapping(payload.client_mapping)
+    if not lk_mapping.lkid_column or not lk_mapping.source_column:
+        raise HTTPException(status_code=400, detail="Для ЛК нужны LKID и полный источник")
+    if not client_mapping.status_column:
+        raise HTTPException(status_code=400, detail="Для клиента нужен статус")
+    _input_path(run_id, "lk")
+    db.init_db()
+    db.ensure_project(project)
+    db.save_match_mapping(project, "lk", lk_mapping)
+    db.save_match_mapping(project, "client", client_mapping)
+    job = db.create_processing_job(
+        run_id,
+        "match",
+        {
+            "project": project,
+            "lk_mapping": payload.lk_mapping.model_dump(),
+            "client_mapping": payload.client_mapping.model_dump(),
+        },
+    )
+    _start_job_worker()
+    return _job_response(job)
+
+
 @app.post("/api/runs/{run_id}/analyze/setup", response_model=AnalyzeSetupResponse)
 def analyze_setup(run_id: str, payload: AnalyzeSetupPayload) -> AnalyzeSetupResponse:
     match_file = _output_file(run_id, "match")
@@ -546,6 +702,49 @@ def run_analyze(run_id: str, payload: AnalyzePayload) -> AnalyzeResponse:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return AnalyzeResponse(filename=output.name, preview=_preview_workbook(output))
+
+
+@app.post("/api/runs/{run_id}/analyze/jobs", response_model=JobResponse)
+def queue_analyze(run_id: str, payload: AnalyzePayload) -> JobResponse:
+    project = payload.project.strip()
+    if not project:
+        raise HTTPException(status_code=400, detail="Укажите проект")
+    if payload.export_number <= 0:
+        raise HTTPException(status_code=400, detail="Номер выгрузки должен быть положительным")
+    if payload.period_start > payload.period_end:
+        raise HTTPException(status_code=400, detail="Дата начала периода не может быть позже даты конца")
+    mapping = _to_mapping(payload.mapping)
+    if not mapping.status_column:
+        raise HTTPException(status_code=400, detail="Для аналитики нужен статус")
+    input_file = _output_file(run_id, "match")
+    df = read_excel_sheet(input_file, mapping.sheet_name)
+    unknown = unknown_statuses(df[mapping.status_column].tolist(), project)
+    _validate_unknown_status_rules(unknown, payload.status_rules)
+    db.init_db()
+    db.ensure_project(project)
+    db.save_column_mapping(project, mapping)
+    job = db.create_processing_job(run_id, "analyze", payload.model_dump(mode="json"))
+    _start_job_worker()
+    return _job_response(job)
+
+
+@app.get("/api/jobs/{job_id}", response_model=JobResponse)
+def processing_job(job_id: int) -> JobResponse:
+    try:
+        return _job_response(db.get_processing_job(job_id))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/jobs/{job_id}/preview", response_model=WorkbookPreview)
+def processing_job_preview(job_id: int) -> WorkbookPreview:
+    try:
+        job = db.get_processing_job(job_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if job["status"] != "completed":
+        raise HTTPException(status_code=409, detail="Задание ещё не завершено")
+    return _preview_workbook(_output_file(str(job["run_id"]), str(job["kind"])))
 
 
 @app.get("/api/runs/{run_id}/download/{kind}")

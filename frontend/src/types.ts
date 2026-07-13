@@ -75,3 +75,15 @@ export type StatusRulesData = {
 export type Step = "upload" | "mapping" | "analyze" | "done";
 
 export type OperationStage = "upload" | "read" | "match" | "prepare" | "done";
+
+export type ProcessingJob = {
+  id: number;
+  run_id: string;
+  kind: "match" | "analyze";
+  status: "queued" | "running" | "completed" | "failed";
+  phase: string;
+  processed_rows: number;
+  total_rows: number;
+  error_text: string | null;
+  output_file_name: string | null;
+};

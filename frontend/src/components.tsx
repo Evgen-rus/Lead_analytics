@@ -192,11 +192,17 @@ export function ProjectCombo({
 export function ProcessProgress({
   active,
   stage,
-  label
+  label,
+  processedRows = 0,
+  totalRows = 0,
+  queued = false
 }: {
   active: boolean;
   stage: OperationStage | null;
   label: string;
+  processedRows?: number;
+  totalRows?: number;
+  queued?: boolean;
 }) {
   if (!active || !stage) return null;
   const stages: { id: OperationStage; title: string }[] = [
@@ -208,18 +214,27 @@ export function ProcessProgress({
   ];
   const current = Math.max(0, stages.findIndex((item) => item.id === stage));
   const remaining = Math.max(0, stages.length - current - 1);
+  const actualProgress = totalRows > 0 ? Math.min(100, (processedRows / totalRows) * 100) : null;
 
   return (
     <section className="processPanel" aria-live="polite">
       <div className="processHeader">
         <div>
           <h2>{label || stages[current].title}</h2>
-          <p>{remaining ? `Осталось этапов: ${remaining}` : "Завершаю обработку"}</p>
+          <p>
+            {queued
+              ? "Ожидает выполнения в очереди"
+              : actualProgress !== null
+                ? `${processedRows} из ${totalRows} строк`
+                : remaining
+                  ? `Осталось этапов: ${remaining}`
+                  : "Завершаю обработку"}
+          </p>
         </div>
         <div className="spinner" aria-hidden="true" />
       </div>
       <div className="processTrack" aria-hidden="true">
-        <span style={{ width: `${((current + 1) / stages.length) * 100}%` }} />
+        <span style={{ width: `${actualProgress ?? ((current + 1) / stages.length) * 100}%` }} />
       </div>
       <div className="processSteps">
         {stages.map((item, index) => (

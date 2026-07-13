@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable
 
 import pandas as pd
 
@@ -9,6 +10,9 @@ from app.models import ColumnMapping
 from app.phone_utils import normalize_phone
 from app.report_writer import write_excel
 from app.source_utils import extract_lkid_from_source, safe_filename
+
+
+ProgressCallback = Callable[[str, int, int], None]
 
 
 def _clean_id(value: object) -> str:
@@ -82,6 +86,7 @@ def match_files(
     lk_mapping: ColumnMapping,
     client_mapping: ColumnMapping,
     output_dir: str | Path,
+    progress: ProgressCallback | None = None,
 ) -> Path:
     lk_raw = read_excel_sheet(lk_file, lk_mapping.sheet_name)
     client_raw = read_excel_sheet(client_file, client_mapping.sheet_name)
@@ -97,8 +102,11 @@ def match_files(
     unmatched_lk = []
     used_client_rows = set()
     match_counts = {"LKID": 0, "LKID из источника": 0, "Телефон": 0}
+    total_rows = len(lk) + len(client)
+    if progress:
+        progress("Сопоставление строк", 0, total_rows)
 
-    for _, lk_row in lk.iterrows():
+    for position, (_, lk_row) in enumerate(lk.iterrows(), start=1):
         client_row = None
         match_key = ""
         match_type = ""
@@ -119,6 +127,8 @@ def match_files(
             item = lk_row.to_dict()
             item["Причина"] = "ключ не найден"
             unmatched_lk.append(item)
+            if progress:
+                progress("Сопоставление строк", position, total_rows)
             continue
 
         used_client_rows.add(int(client_row["_row"]))
@@ -136,9 +146,11 @@ def match_files(
         item["Признак дубля клиента"] = "да" if any(d.get("Ключ") == match_key for d in duplicate_rows) else "нет"
         item["Комментарий сопоставления"] = f"Сопоставлено по {match_type}"
         matched_rows.append(item)
+        if progress:
+            progress("Сопоставление строк", position, total_rows)
 
     unmatched_client = []
-    for _, row in client.iterrows():
+    for position, (_, row) in enumerate(client.iterrows(), start=1):
         if int(row["_row"]) in used_client_rows:
             continue
         item = row.to_dict()
@@ -154,6 +166,8 @@ def match_files(
             reason = "ключ не найден"
         item["Причина"] = reason
         unmatched_client.append(item)
+        if progress:
+            progress("Проверка строк клиента", len(lk) + position, total_rows)
 
     check = pd.DataFrame(
         [
@@ -188,6 +202,8 @@ def match_files(
     )
 
     output = Path(output_dir) / f"{safe_filename(project)}_сопоставление.xlsx"
+    if progress:
+        progress("Формирование отчёта сопоставления", total_rows, total_rows)
     return write_excel(
         output,
         {

@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -118,6 +119,24 @@ def init_db(db_path: Path | None = None) -> None:
                 metrics_json TEXT NOT NULL DEFAULT '{}',
                 FOREIGN KEY(export_id) REFERENCES analysis_exports(id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS processing_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                status TEXT NOT NULL,
+                phase TEXT NOT NULL DEFAULT '',
+                processed_rows INTEGER NOT NULL DEFAULT 0,
+                total_rows INTEGER NOT NULL DEFAULT 0,
+                error_text TEXT,
+                output_file_name TEXT,
+                created_at TEXT NOT NULL,
+                started_at TEXT,
+                completed_at TEXT,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_processing_jobs_status_id
+            ON processing_jobs(status, id);
             """
         )
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(status_rules)")}
@@ -171,6 +190,91 @@ def ensure_project(project: str) -> None:
             """,
             (project, project, now_text()),
         )
+
+
+def create_processing_job(run_id: str, kind: str, payload: dict[str, object]) -> dict[str, object]:
+    stamp = now_text()
+    with connect() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO processing_jobs(
+                run_id, kind, payload_json, status, created_at, updated_at
+            ) VALUES (?, ?, ?, 'queued', ?, ?)
+            """,
+            (run_id, kind, json.dumps(payload, ensure_ascii=False), stamp, stamp),
+        )
+        job_id = int(cursor.lastrowid)
+    return get_processing_job(job_id)
+
+
+def get_processing_job(job_id: int) -> dict[str, object]:
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM processing_jobs WHERE id = ?", (job_id,)).fetchone()
+    if row is None:
+        raise LookupError("Задание не найдено")
+    result = dict(row)
+    result["payload"] = json.loads(result.pop("payload_json"))
+    return result
+
+
+def claim_next_processing_job() -> dict[str, object] | None:
+    stamp = now_text()
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id FROM processing_jobs WHERE status = 'queued' ORDER BY id ASC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return None
+        cursor = conn.execute(
+            """
+            UPDATE processing_jobs
+            SET status = 'running', started_at = ?, updated_at = ?
+            WHERE id = ? AND status = 'queued'
+            """,
+            (stamp, stamp, row["id"]),
+        )
+        if cursor.rowcount != 1:
+            return None
+    return get_processing_job(int(row["id"]))
+
+
+def has_queued_processing_jobs() -> bool:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM processing_jobs WHERE status = 'queued' LIMIT 1"
+        ).fetchone()
+    return row is not None
+
+
+def update_processing_job(
+    job_id: int,
+    *,
+    status: str | None = None,
+    phase: str | None = None,
+    processed_rows: int | None = None,
+    total_rows: int | None = None,
+    error_text: str | None = None,
+    output_file_name: str | None = None,
+) -> None:
+    fields: list[str] = ["updated_at = ?"]
+    values: list[object] = [now_text()]
+    for column, value in {
+        "status": status,
+        "phase": phase,
+        "processed_rows": processed_rows,
+        "total_rows": total_rows,
+        "error_text": error_text,
+        "output_file_name": output_file_name,
+    }.items():
+        if value is not None:
+            fields.append(f"{column} = ?")
+            values.append(value)
+    if status in {"completed", "failed"}:
+        fields.append("completed_at = ?")
+        values.append(now_text())
+    values.append(job_id)
+    with connect() as conn:
+        conn.execute(f"UPDATE processing_jobs SET {', '.join(fields)} WHERE id = ?", values)
 
 
 def list_projects() -> list[str]:

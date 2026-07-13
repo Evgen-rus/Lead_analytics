@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable
 
 import pandas as pd
 
@@ -14,6 +15,9 @@ from app.source_utils import NO_DATA, normalize_source, safe_filename
 from app.status_classifier import classify
 
 
+ProgressCallback = Callable[[str, int, int], None]
+
+
 def analyze_file(
     project: str,
     file: str | Path,
@@ -21,6 +25,7 @@ def analyze_file(
     output_dir: str | Path,
     export_metadata: ExportMetadata | None = None,
     replace_export: bool = False,
+    progress: ProgressCallback | None = None,
 ) -> Path:
     df = read_excel_sheet(file, mapping.sheet_name)
 
@@ -33,10 +38,16 @@ def analyze_file(
     )
     data["Исходный статус"] = df[mapping.status_column]
     data["Комментарий"] = df[mapping.comment_column] if mapping.comment_column else ""
-    classifications = [
-        classify(status, comment, project)
-        for status, comment in zip(data["Исходный статус"], data["Комментарий"])
-    ]
+    total_rows = len(data)
+    classifications = []
+    if progress:
+        progress("Анализ статусов", 0, total_rows)
+    for position, (status, comment) in enumerate(
+        zip(data["Исходный статус"], data["Комментарий"]), start=1
+    ):
+        classifications.append(classify(status, comment, project))
+        if progress:
+            progress("Анализ статусов", position, total_rows)
     data["Группа статуса"] = [item[0] for item in classifications]
     data["Правило"] = [item[1] for item in classifications]
     data = add_domain(data)
@@ -59,6 +70,8 @@ def analyze_file(
     conclusions = build_conclusions(total, channels)
 
     output = Path(output_dir) / f"{safe_filename(project)}_аналитика.xlsx"
+    if progress:
+        progress("Формирование аналитического отчёта", total_rows, total_rows)
     written = write_excel(
         output,
         {
