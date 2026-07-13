@@ -5,6 +5,7 @@ rapidfuzz
 typer
 pydantic
 pytest
+ruff
 fastapi
 uvicorn
 python-multipart
