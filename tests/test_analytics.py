@@ -1,8 +1,10 @@
 import pandas as pd
+from openpyxl import load_workbook
 
 from app import pipeline
 from app.analytics import summarize
 from app.models import ColumnMapping
+from app.report_writer import write_excel
 
 
 def test_summarize_excludes_do_not_count_group():
@@ -69,3 +71,24 @@ def test_analyze_file_loads_status_rules_once(monkeypatch, tmp_path):
     pipeline.analyze_file("p", "input.xlsx", mapping, tmp_path)
 
     assert calls == 1
+
+
+def test_write_excel_preserves_report_formatting(tmp_path):
+    path = write_excel(
+        tmp_path / "report.xlsx",
+        {
+            "Итог": pd.DataFrame(
+                {"Кач. %": [0.03, 0.0910891089108911], "Канал": ["Поиск", "Сети"]}
+            )
+        },
+    )
+
+    ws = load_workbook(path).active
+
+    assert ws.freeze_panes == "A2"
+    assert ws.auto_filter.ref == "A1:B3"
+    assert ws["A2"].number_format == "0.00%"
+    assert ws["A3"].number_format == "0.00%"
+    assert ws["A2"].fill.fill_type == "solid"
+    assert ws["A3"].fill.fill_type == "solid"
+    assert ws.column_dimensions["B"].width >= len("Канал") + 2

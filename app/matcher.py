@@ -53,30 +53,34 @@ def _prepare_client(df: pd.DataFrame, mapping: ColumnMapping) -> pd.DataFrame:
     return result
 
 
-def _choose_latest(part: pd.DataFrame) -> tuple[pd.Series, str]:
-    dated = part.dropna(subset=["_date"])
-    if not dated.empty:
-        idx = dated.sort_values(["_date", "_row"]).index[-1]
-        return part.loc[idx], "последняя дата"
-    idx = part.sort_values("_row").index[-1]
-    return part.loc[idx], "последняя строка"
-
-
 def _build_index(client: pd.DataFrame, key_col: str, key_type: str) -> tuple[dict[str, pd.Series], list[dict]]:
-    indexed = {}
-    duplicates = []
-    for key, part in client[client[key_col] != ""].groupby(key_col, dropna=False):
-        chosen, reason = _choose_latest(part)
-        indexed[str(key)] = chosen
-        if len(part) > 1:
-            for _, row in part.iterrows():
-                item = row.to_dict()
-                item["Ключ"] = key
-                item["Тип ключа"] = key_type
-                item["Выбрана строка"] = "да" if row["_row"] == chosen["_row"] else "нет"
-                item["Причина выбора"] = reason
-                duplicates.append(item)
-    return indexed, duplicates
+    rows = client[client[key_col] != ""].copy()
+    if rows.empty:
+        return {}, []
+
+    # The original rule is: prefer the latest dated row, then the latest source row.
+    # Sorting all rows once avoids repeating a DataFrame sort for every individual key.
+    rows["_has_date"] = rows["_date"].notna()
+    ordered = rows.sort_values([key_col, "_has_date", "_date", "_row"], kind="stable")
+    selected = ordered.drop_duplicates(subset=key_col, keep="last")
+    indexed = {str(row[key_col]): row for _, row in selected.iterrows()}
+
+    duplicate_rows = rows[rows.duplicated(subset=key_col, keep=False)].copy()
+    if duplicate_rows.empty:
+        return indexed, []
+
+    selected_rows = dict(zip(selected[key_col], selected["_row"], strict=True))
+    dated_keys = set(rows.loc[rows["_date"].notna(), key_col])
+    duplicate_rows = duplicate_rows.sort_values([key_col, "_row"], kind="stable")
+    duplicate_rows["Ключ"] = duplicate_rows[key_col]
+    duplicate_rows["Тип ключа"] = key_type
+    duplicate_rows["Выбрана строка"] = duplicate_rows["_row"].eq(
+        duplicate_rows[key_col].map(selected_rows)
+    ).map({True: "да", False: "нет"})
+    duplicate_rows["Причина выбора"] = duplicate_rows[key_col].isin(dated_keys).map(
+        {True: "последняя дата", False: "последняя строка"}
+    )
+    return indexed, duplicate_rows.drop(columns="_has_date").to_dict("records")
 
 
 def match_files(
@@ -97,6 +101,9 @@ def match_files(
     by_source_lkid, dup_source_lkid = _build_index(client, "_lkid_from_source", "LKID из источника")
     by_phone, dup_phone = _build_index(client, "_phone", "Телефон")
     duplicate_rows = dup_lkid + dup_source_lkid + dup_phone
+    duplicate_keys = {str(item["Ключ"]) for item in duplicate_rows}
+    lk_lkids = set(lk["_lkid"])
+    lk_phones = set(lk["_phone"])
 
     matched_rows = []
     unmatched_lk = []
@@ -143,7 +150,7 @@ def match_files(
         item["Дата клиента"] = client_row["_date"]
         item["Ключ сопоставления"] = match_key
         item["Тип сопоставления"] = match_type
-        item["Признак дубля клиента"] = "да" if any(d.get("Ключ") == match_key for d in duplicate_rows) else "нет"
+        item["Признак дубля клиента"] = "да" if match_key in duplicate_keys else "нет"
         item["Комментарий сопоставления"] = f"Сопоставлено по {match_type}"
         matched_rows.append(item)
         if progress:
@@ -154,11 +161,11 @@ def match_files(
         if int(row["_row"]) in used_client_rows:
             continue
         item = row.to_dict()
-        if row["_lkid"] and row["_lkid"] not in set(lk["_lkid"]):
+        if row["_lkid"] and row["_lkid"] not in lk_lkids:
             reason = "нет такого LKID в ЛК"
-        elif row["_lkid_from_source"] and row["_lkid_from_source"] not in set(lk["_lkid"]):
+        elif row["_lkid_from_source"] and row["_lkid_from_source"] not in lk_lkids:
             reason = "нет такого LKID в ЛК"
-        elif row["_phone"] and row["_phone"] not in set(lk["_phone"]):
+        elif row["_phone"] and row["_phone"] not in lk_phones:
             reason = "нет такого телефона в ЛК"
         elif not row["_lkid"] and not row["_lkid_from_source"] and not row["_phone"]:
             reason = "нет ключа для сопоставления"
