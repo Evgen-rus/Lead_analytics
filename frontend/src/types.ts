@@ -34,6 +34,12 @@ export type WorkbookPreview = {
   sheets: SheetPreview[];
 };
 
+export type GoogleSheetsExport = {
+  spreadsheet_url: string;
+  spreadsheet_title: string;
+  sheet_titles: string[];
+};
+
 export type ExportRecord = {
   export_number: number;
   period_start: string;

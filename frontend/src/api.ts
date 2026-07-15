@@ -1,6 +1,7 @@
 import type {
   AnalyzeSetup,
   ExportRecord,
+  GoogleSheetsExport,
   Mapping,
   ProcessingJob,
   StatusRuleItem,
@@ -155,4 +156,16 @@ export async function deleteExportRequest(project: string, exportNumber: number)
 
 export function downloadUrl(runId: string | null, kind: "match" | "analyze"): string {
   return runId ? `${API}/runs/${runId}/download/${kind}` : "#";
+}
+
+export function exportToGoogleSheets(
+  runId: string,
+  project: string,
+  analysisDate: string
+): Promise<GoogleSheetsExport> {
+  return jsonRequest<GoogleSheetsExport>(`${API}/runs/${runId}/google-sheets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project, analysis_date: analysisDate })
+  });
 }

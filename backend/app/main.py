@@ -24,6 +24,7 @@ from app.export_history import (
     write_project_comparison,
     write_project_summary,
 )
+from app.google_sheets import export_workbook
 from app.matcher import match_files
 from app.models import ColumnMapping, StatusRule
 from app.pipeline import analyze_file
@@ -139,6 +140,17 @@ class AnalyzeSetupResponse(BaseModel):
 class AnalyzeResponse(BaseModel):
     filename: str
     preview: WorkbookPreview
+
+
+class GoogleSheetsExportPayload(BaseModel):
+    project: str
+    analysis_date: date
+
+
+class GoogleSheetsExportResponse(BaseModel):
+    spreadsheet_url: str
+    spreadsheet_title: str
+    sheet_titles: list[str]
 
 
 class JobResponse(BaseModel):
@@ -754,4 +766,25 @@ def download_file(run_id: str, kind: Literal["match", "analyze"]) -> FileRespons
         path,
         filename=path.name,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.post("/api/runs/{run_id}/google-sheets", response_model=GoogleSheetsExportResponse)
+def export_analysis_to_google_sheets(
+    run_id: str,
+    payload: GoogleSheetsExportPayload,
+) -> GoogleSheetsExportResponse:
+    project = payload.project.strip()
+    if not project:
+        raise HTTPException(status_code=400, detail="Укажите проект")
+    try:
+        result = export_workbook(_output_file(run_id, "analyze"), project, payload.analysis_date)
+    except (RuntimeError, ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Не удалось выгрузить в Google Таблицу: {exc}") from exc
+    return GoogleSheetsExportResponse(
+        spreadsheet_url=str(result["spreadsheet_url"]),
+        spreadsheet_title=str(result["spreadsheet_title"]),
+        sheet_titles=[str(sheet["title"]) for sheet in result["sheets"]],
     )

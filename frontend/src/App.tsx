@@ -3,6 +3,7 @@ import {
   deleteStatusRule,
   deleteExportRequest,
   downloadUrl,
+  exportToGoogleSheets,
   fetchAnalyzeSetup,
   fetchExports,
   fetchProcessingJob,
@@ -79,6 +80,7 @@ export default function App() {
   const [rulesData, setRulesData] = useState<StatusRulesData | null>(null);
   const [rulesLoading, setRulesLoading] = useState(false);
   const [activeJob, setActiveJob] = useState<ProcessingJob | null>(null);
+  const [googleSheetsUrl, setGoogleSheetsUrl] = useState("");
 
   const canUpload = useMemo(() => project.trim() && lkFile && clientFile, [project, lkFile, clientFile]);
   const canMatch = useMemo(
@@ -155,6 +157,7 @@ export default function App() {
     setAnalyzeMapping(emptyMapping);
     setStatusRules({});
     setAnalyzePreview(null);
+    setGoogleSheetsUrl("");
     setStatusModalOpen(false);
     setActiveJob(null);
     localStorage.removeItem("lead-analytics.active-job");
@@ -299,6 +302,24 @@ export default function App() {
       await refreshExports(project);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось удалить выгрузку");
+    } finally {
+      setLoading(false);
+      setOperation("");
+      setOperationStage(null);
+    }
+  }
+
+  async function sendAnalysisToGoogleSheets() {
+    if (!upload || !analysisDate) return;
+    setLoading(true);
+    setOperation("Выгружаю листы анализа в Google Таблицу");
+    setOperationStage("prepare");
+    setError("");
+    try {
+      const result = await exportToGoogleSheets(upload.run_id, project, analysisDate);
+      setGoogleSheetsUrl(result.spreadsheet_url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось выгрузить в Google Таблицу");
     } finally {
       setLoading(false);
       setOperation("");
@@ -557,6 +578,15 @@ export default function App() {
                 <a className="download" href={downloadUrl(upload.run_id, "analyze")}>
                   Скачать аналитику
                 </a>
+                {googleSheetsUrl ? (
+                  <a className="download secondary" href={googleSheetsUrl} target="_blank" rel="noreferrer">
+                    Открыть Google Таблицу
+                  </a>
+                ) : (
+                  <button className="ghostButton" onClick={sendAnalysisToGoogleSheets} disabled={loading}>
+                    Выгрузить в Google Таблицу
+                  </button>
+                )}
                 <button className="ghostButton" onClick={() => setStep("upload")} disabled={loading}>
                   Новая выгрузка
                 </button>
