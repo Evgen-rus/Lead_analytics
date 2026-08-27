@@ -7,6 +7,7 @@ INPUT_DIR = DATA_DIR / "input"
 OUTPUT_DIR = DATA_DIR / "output"
 DB_PATH = DATA_DIR / "analytics.db"
 RULES_DIR = ROOT_DIR / "rules"
+MATCHED_SHEET_NAME = "Сопоставленные"
 
 
 def ensure_dirs() -> None:

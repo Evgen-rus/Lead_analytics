@@ -73,6 +73,56 @@ def test_analyze_file_loads_status_rules_once(monkeypatch, tmp_path):
     assert calls == 1
 
 
+def test_analyze_file_uses_matched_sheet_not_duplicates(tmp_path, monkeypatch):
+    path = tmp_path / "match.xlsx"
+    matched = pd.DataFrame(
+        {
+            "Дата": ["2026-01-01", "2026-01-02"],
+            "Телефон": ["1", "2"],
+            "Канал": ["A", "A"],
+            "Источники": ["example.com", "example.com"],
+            "Статус клиента": ["Новый", "Новый"],
+            "Комментарий клиента": ["", ""],
+        }
+    )
+    duplicates = pd.DataFrame(
+        {
+            "Дата создания": ["2026-01-01"] * 5,
+            "Рабочий телефон": ["1"] * 5,
+            "_status": ["СПАМ"] * 5,
+            "_comment": [""] * 5,
+            "Источник": ["x"] * 5,
+        }
+    )
+    with pd.ExcelWriter(path) as writer:
+        matched.to_excel(writer, sheet_name="Сопоставленные", index=False)
+        duplicates.to_excel(writer, sheet_name="Дубли клиента", index=False)
+
+    mapping = ColumnMapping(
+        sheet_name="Дубли клиента",
+        date_column="Дата",
+        phone_column="Телефон",
+        channel_column="Канал",
+        source_column="Источники",
+        status_column="Статус клиента",
+        comment_column="Комментарий клиента",
+    )
+    captured = {}
+
+    def fake_write(output, sheets):
+        captured["data"] = sheets["Данные"]
+        return output
+
+    monkeypatch.setattr(pipeline, "sorted_rules", lambda _project: [])
+    monkeypatch.setattr(pipeline, "classify", lambda *_args, **_kwargs: ("Качественные", "тест"))
+    monkeypatch.setattr(pipeline, "write_excel", fake_write)
+
+    pipeline.analyze_file("p", path, mapping, tmp_path)
+
+    assert len(captured["data"]) == 2
+    assert list(captured["data"]["Телефон"]) == ["1", "2"]
+
+
 def test_write_excel_preserves_report_formatting(tmp_path):
     path = write_excel(
         tmp_path / "report.xlsx",

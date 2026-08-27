@@ -5,6 +5,7 @@ from typing import Callable
 
 import pandas as pd
 
+from app.config import MATCHED_SHEET_NAME
 from app.excel_reader import read_excel_sheet
 from app.models import ColumnMapping
 from app.phone_utils import normalize_phone
@@ -214,7 +215,7 @@ def match_files(
     return write_excel(
         output,
         {
-            "Сопоставленные": pd.DataFrame(matched_rows),
+            MATCHED_SHEET_NAME: pd.DataFrame(matched_rows),
             "Не сопоставлено из ЛК": pd.DataFrame(unmatched_lk),
             "Не сопоставлено от клиента": pd.DataFrame(unmatched_client),
             "Дубли клиента": pd.DataFrame(duplicate_rows),

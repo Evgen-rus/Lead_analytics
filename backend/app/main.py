@@ -29,7 +29,7 @@ from app.matcher import match_files
 from app.models import ColumnMapping, StatusRule
 from app.pipeline import analyze_file
 from app.status_classifier import ALL_GROUPS, load_json_rules, unknown_statuses
-from app.structure_detector import detect_analyze_mapping, detect_match_mapping
+from app.structure_detector import prepare_analyze_mapping, detect_match_mapping
 
 RUNS_DIR = DATA_DIR / "runs"
 PREVIEW_ROWS = 25
@@ -651,7 +651,7 @@ def queue_match(run_id: str, payload: MatchPayload) -> JobResponse:
 @app.post("/api/runs/{run_id}/analyze/setup", response_model=AnalyzeSetupResponse)
 def analyze_setup(run_id: str, payload: AnalyzeSetupPayload) -> AnalyzeSetupResponse:
     match_file = _output_file(run_id, "match")
-    mapping = _to_mapping(payload.mapping) if payload.mapping else detect_analyze_mapping(match_file)
+    mapping = prepare_analyze_mapping(match_file, _to_mapping(payload.mapping) if payload.mapping else None)
     df = read_excel_sheet(match_file, mapping.sheet_name)
     unknown = unknown_statuses(df[mapping.status_column].tolist(), payload.project) if mapping.status_column else []
     return AnalyzeSetupResponse(
@@ -677,6 +677,9 @@ def run_analyze(run_id: str, payload: AnalyzePayload) -> AnalyzeResponse:
         raise HTTPException(status_code=400, detail="Для аналитики нужен статус")
 
     input_file = _output_file(run_id, "match")
+    mapping = prepare_analyze_mapping(input_file, mapping)
+    if not mapping.status_column:
+        raise HTTPException(status_code=400, detail="Для аналитики нужен статус")
     df = read_excel_sheet(input_file, mapping.sheet_name)
     unknown = unknown_statuses(df[mapping.status_column].tolist(), project)
     _validate_unknown_status_rules(unknown, payload.status_rules)
@@ -729,13 +732,18 @@ def queue_analyze(run_id: str, payload: AnalyzePayload) -> JobResponse:
     if not mapping.status_column:
         raise HTTPException(status_code=400, detail="Для аналитики нужен статус")
     input_file = _output_file(run_id, "match")
+    mapping = prepare_analyze_mapping(input_file, mapping)
+    if not mapping.status_column:
+        raise HTTPException(status_code=400, detail="Для аналитики нужен статус")
     df = read_excel_sheet(input_file, mapping.sheet_name)
     unknown = unknown_statuses(df[mapping.status_column].tolist(), project)
     _validate_unknown_status_rules(unknown, payload.status_rules)
     db.init_db()
     db.ensure_project(project)
     db.save_column_mapping(project, mapping)
-    job = db.create_processing_job(run_id, "analyze", payload.model_dump(mode="json"))
+    job_payload = payload.model_dump(mode="json")
+    job_payload["mapping"] = _from_mapping(mapping).model_dump()
+    job = db.create_processing_job(run_id, "analyze", job_payload)
     _start_job_worker()
     return _job_response(job)
 

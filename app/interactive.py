@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import typer
 
+from app.config import MATCHED_SHEET_NAME
 from app.excel_reader import list_sheets, read_excel_sheet
 from app.models import ColumnMapping
 from app.status_classifier import ALL_GROUPS
@@ -31,8 +32,12 @@ def _choose(prompt: str, values: list[str], required: bool = False) -> str | Non
 
 def ask_analyze_mapping(path: str, current: ColumnMapping | None = None) -> ColumnMapping:
     sheets = list_sheets(path)
-    typer.echo("Листы:")
-    sheet = _choose("Выберите лист для анализа", sheets, required=True)
+    if MATCHED_SHEET_NAME in sheets:
+        sheet = MATCHED_SHEET_NAME
+        typer.echo(f'Лист аналитики: {sheet}')
+    else:
+        typer.echo("Листы:")
+        sheet = _choose("Выберите лист для анализа", sheets, required=True)
     df = read_excel_sheet(path, sheet)
     columns = list(df.columns)
     typer.echo(f'Колонки на листе "{sheet}":')

@@ -225,7 +225,7 @@ export default function App() {
       setOperationStage("prepare");
       const setup = await fetchAnalyzeSetup(upload.run_id, project);
       setAnalyzeSetup(setup);
-      setAnalyzeMapping(normalizeMapping(setup.mapping, setup.sheets[0]?.name ?? ""));
+      setAnalyzeMapping(normalizeMapping(setup.mapping, setup.mapping.sheet_name || setup.sheets[0]?.name || ""));
       setStatusRules({});
       setStep("analyze");
     } catch (err) {

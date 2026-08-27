@@ -6,8 +6,9 @@ from typing import Callable
 import pandas as pd
 
 from app.analytics import add_domain, status_summary, summarize
+from app.config import MATCHED_SHEET_NAME
 from app.conclusions import build_conclusions
-from app.excel_reader import read_excel_sheet
+from app.excel_reader import list_sheets, read_excel_sheet
 from app.export_history import ExportMetadata, save_analysis_export
 from app.models import ColumnMapping
 from app.report_writer import write_excel
@@ -27,7 +28,10 @@ def analyze_file(
     replace_export: bool = False,
     progress: ProgressCallback | None = None,
 ) -> Path:
-    df = read_excel_sheet(file, mapping.sheet_name)
+    path = Path(file)
+    sheets = list_sheets(path) if path.exists() else []
+    sheet = MATCHED_SHEET_NAME if MATCHED_SHEET_NAME in sheets else mapping.sheet_name
+    df = read_excel_sheet(path, sheet)
 
     data = pd.DataFrame()
     data["Дата"] = df[mapping.date_column] if mapping.date_column else pd.NaT

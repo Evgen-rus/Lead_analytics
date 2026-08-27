@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from app.config import MATCHED_SHEET_NAME
 from app.excel_reader import list_sheets, read_excel_sheet
 from app.models import ColumnMapping
 
@@ -54,8 +55,19 @@ def choose_data_sheet(path: str | Path) -> str:
     return best_sheet
 
 
+def choose_analyze_sheet(path: str | Path) -> str:
+    sheets = list_sheets(path)
+    if MATCHED_SHEET_NAME in sheets:
+        return MATCHED_SHEET_NAME
+    return choose_data_sheet(path)
+
+
 def detect_analyze_mapping(path: str | Path, sheet_name: str | None = None) -> ColumnMapping:
-    sheet = sheet_name or choose_data_sheet(path)
+    sheets = list_sheets(path)
+    if MATCHED_SHEET_NAME in sheets:
+        sheet = MATCHED_SHEET_NAME
+    else:
+        sheet = sheet_name or choose_data_sheet(path)
     df = read_excel_sheet(path, sheet)
     columns = list(df.columns)
     date_col = _find_by_names(columns, ["Дата", "Дата создания", "date", "created"])
@@ -97,6 +109,25 @@ def detect_analyze_mapping(path: str | Path, sheet_name: str | None = None) -> C
         status_column=status_col,
         comment_column=comment_col,
     )
+
+
+def prepare_analyze_mapping(path: str | Path, mapping: ColumnMapping | None = None) -> ColumnMapping:
+    detected = detect_analyze_mapping(path)
+    if mapping is None:
+        return detected
+    mapping.sheet_name = detected.sheet_name
+    columns = set(read_excel_sheet(path, mapping.sheet_name).columns)
+    required = [
+        mapping.date_column,
+        mapping.phone_column,
+        mapping.channel_column,
+        mapping.source_column,
+        mapping.status_column,
+        mapping.comment_column,
+    ]
+    if any(column and column not in columns for column in required):
+        return detected
+    return mapping
 
 
 def detect_match_mapping(path: str | Path, role: str, sheet_name: str | None = None) -> ColumnMapping:

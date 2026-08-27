@@ -19,14 +19,15 @@ from app.matcher import match_files
 from app.models import StatusRule
 from app.pipeline import analyze_file
 from app.status_classifier import unknown_statuses
-from app.structure_detector import detect_analyze_mapping, detect_match_mapping
+from app.structure_detector import choose_analyze_sheet, detect_analyze_mapping, detect_match_mapping
 
 app = typer.Typer(no_args_is_help=True)
 
 
 def _mapping_or_detect_analyze(path: str, project: str, interactive: bool, remap: bool):
     saved = None if remap else db.get_column_mapping(project)
-    if saved:
+    analyze_sheet = choose_analyze_sheet(path)
+    if saved and saved.sheet_name == analyze_sheet:
         return saved
     detected = detect_analyze_mapping(path)
     if interactive and (remap or not detected.status_column):

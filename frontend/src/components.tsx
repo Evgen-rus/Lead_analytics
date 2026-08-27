@@ -14,6 +14,8 @@ import type {
 
 type MappingFile = FileInspect | AnalyzeSetup;
 
+const MATCHED_SHEET_NAME = "Сопоставленные";
+
 export function formatPercent(value: number): string {
   return `${(value * 100).toFixed(2)}%`;
 }
@@ -392,11 +394,16 @@ export function MappingPanel({
   role: "lk" | "client" | "analyze";
   onChange: (mapping: Mapping) => void;
 }) {
-  const columns = sheetColumns(file, mapping);
-  const active = activeSheet(file, mapping.sheet_name);
+  const lockAnalyzeSheet = role === "analyze" && file.sheets.some((sheet) => sheet.name === MATCHED_SHEET_NAME);
+  const sheets = lockAnalyzeSheet
+    ? file.sheets.filter((sheet) => sheet.name === MATCHED_SHEET_NAME)
+    : file.sheets;
+  const effectiveMapping = lockAnalyzeSheet ? { ...mapping, sheet_name: MATCHED_SHEET_NAME } : mapping;
+  const columns = sheetColumns(file, effectiveMapping);
+  const active = activeSheet(file, effectiveMapping.sheet_name);
 
   function patch(update: Partial<Mapping>) {
-    onChange({ ...mapping, ...update });
+    onChange({ ...effectiveMapping, ...update });
   }
 
   return (
@@ -407,12 +414,22 @@ export function MappingPanel({
           <p>{file.filename}</p>
         </div>
       </div>
-      <SheetTabs sheets={file.sheets} value={mapping.sheet_name} onChange={(sheetName) => patch({ sheet_name: sheetName })} />
+      <SheetTabs
+        sheets={sheets}
+        value={effectiveMapping.sheet_name}
+        onChange={(sheetName) => {
+          if (!lockAnalyzeSheet) patch({ sheet_name: sheetName });
+        }}
+      />
       <div className="mappingGrid">
         <label className="field">
           <span>Лист *</span>
-          <select value={mapping.sheet_name} onChange={(event) => patch({ sheet_name: event.target.value })}>
-            {file.sheets.map((sheet) => (
+          <select
+            value={effectiveMapping.sheet_name}
+            disabled={lockAnalyzeSheet}
+            onChange={(event) => patch({ sheet_name: event.target.value })}
+          >
+            {sheets.map((sheet) => (
               <option value={sheet.name} key={sheet.name}>
                 {sheet.name}
               </option>
