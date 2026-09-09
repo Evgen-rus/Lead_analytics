@@ -515,6 +515,7 @@ export function AnalyzeSummary({ workbook }: { workbook: WorkbookPreview }) {
       <MetricCard label="Качественные" value={displayValue(row["Качественные"]) || "0"} hint={formatMetric(row["Кач. %"])} />
       <MetricCard label="Недозвон" value={displayValue(row["Недозвон"]) || "0"} hint={formatMetric(row["Недозвон %"])} />
       <MetricCard label="Сигнал спроса" value={displayValue(row["Сигнал спроса"]) || "0"} hint={formatMetric(row["Сигнал спроса %"])} />
+      <MetricCard label="Конкурент" value={displayValue(row["Конкурент"]) || "0"} hint={formatMetric(row["Конкурент %"])} />
     </div>
   );
 }

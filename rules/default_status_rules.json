@@ -13,7 +13,7 @@
   {"pattern": "через месяц", "match_type": "contains", "group_name": "Рабочий потенциал", "priority": 100},
   {"pattern": "уже купил", "match_type": "contains", "group_name": "Уже наши / уже купил", "priority": 100},
   {"pattern": "уже купили", "match_type": "contains", "group_name": "Уже наши / уже купил", "priority": 100},
-  {"pattern": "конкурент", "match_type": "contains", "group_name": "Уже наши / уже купил", "priority": 100},
+  {"pattern": "конкурент", "match_type": "contains", "group_name": "Конкурент", "priority": 100},
   {"pattern": "Недозвон", "match_type": "contains", "group_name": "Недозвон", "priority": 100},
   {"pattern": "НДЗ", "match_type": "contains", "group_name": "Недозвон", "priority": 100},
   {"pattern": "занято", "match_type": "contains", "group_name": "Недозвон", "priority": 100},

@@ -15,7 +15,7 @@ from app.source_utils import safe_filename
 from app.status_classifier import ALL_GROUPS
 
 QUALITY_COUNT_COL = ALL_GROUPS[0]
-MISSED_COUNT_COL = ALL_GROUPS[3]
+MISSED_COUNT_COL = "Недозвон"
 QUALITY_RATE_COL = "Кач. %"
 MISSED_RATE_COL = "Недозвон %"
 DEMAND_COUNT_COL = "Сигнал спроса"

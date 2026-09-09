@@ -16,6 +16,7 @@ ALL_GROUPS = [
     "Качественные",
     "Рабочий потенциал",
     "Уже наши / уже купил",
+    "Конкурент",
     "Недозвон",
     "Некачественные",
     "Не подходит по гео",
@@ -113,8 +114,7 @@ def classify(
     rules: list[StatusRule] | None = None,
 ) -> tuple[str, str]:
     status_text = _clean_text(status)
-    comment_text = _clean_text(comment)
-    text = " ".join(part for part in [status_text, comment_text] if part)
+    text = status_text
     if not text.strip():
         return "Не учитывать", "пустой статус"
     active_rules = rules if rules is not None else sorted_rules(project)

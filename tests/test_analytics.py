@@ -20,10 +20,15 @@ def test_summarize_excludes_do_not_count_group():
     assert result.loc[0, "Сигнал спроса %"] == 0.5
 
 
-def test_summarize_places_demand_signal_after_already_bought_percent():
+def test_summarize_places_competitor_after_demand_signal_and_excludes_it_from_demand():
     df = pd.DataFrame(
         {
-            "Группа статуса": ["Качественные", "Уже наши / уже купил", "Недозвон"],
+            "Группа статуса": [
+                "Качественные",
+                "Уже наши / уже купил",
+                "Конкурент",
+                "Недозвон",
+            ],
         }
     )
     result = summarize(df, [])
@@ -31,7 +36,10 @@ def test_summarize_places_demand_signal_after_already_bought_percent():
     already_percent_index = columns.index("Уже наши / купил %")
     assert columns[already_percent_index + 1] == "Сигнал спроса"
     assert columns[already_percent_index + 2] == "Сигнал спроса %"
-    assert columns[already_percent_index + 3] == "Недозвон"
+    assert columns[already_percent_index + 3] == "Конкурент"
+    assert columns[already_percent_index + 4] == "Конкурент %"
+    assert result.loc[0, "Сигнал спроса"] == 2
+    assert result.loc[0, "Сигнал спроса %"] == 0.5
 
 
 def test_analyze_file_loads_status_rules_once(monkeypatch, tmp_path):
