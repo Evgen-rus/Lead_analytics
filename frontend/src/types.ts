@@ -53,6 +53,22 @@ export type ExportRecord = {
   quality_rate: number;
   demand_count: number;
   demand_rate: number;
+  periods: ExportPeriodRecord[];
+};
+
+export type AnalysisPeriod = {
+  period_start: string;
+  period_end: string;
+};
+
+export type ExportPeriodRecord = AnalysisPeriod & {
+  total_count: number;
+  missed_count: number;
+  missed_rate: number;
+  quality_count: number;
+  quality_rate: number;
+  demand_count: number;
+  demand_rate: number;
 };
 
 export type AnalyzeSetup = {

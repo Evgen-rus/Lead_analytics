@@ -10,6 +10,7 @@ from app.config import OUTPUT_DIR, ensure_dirs
 from app.excel_reader import read_excel_sheet, workbook_preview
 from app.export_history import (
     ExportMetadata,
+    ExportPeriod,
     delete_analysis_export,
     write_project_comparison,
     write_project_summary,
@@ -152,19 +153,14 @@ def analyze(
                 )
             )
 
-    export_metadata = None
-    if export_number or period_from or period_to or analysis_date:
-        if export_number is None or not period_from or not period_to:
-            raise typer.BadParameter(
-                "Для сохранения выгрузки укажите --export-number, --period-from и --period-to."
-            )
-        export_metadata = ExportMetadata(
-            export_number=export_number,
-            period_start=period_from,
-            period_end=period_to,
-            analysis_date=analysis_date,
-            source_file_name=file.name,
-        )
+    if not period_from or not period_to:
+        raise typer.BadParameter("Для аналитики укажите --period-from и --period-to.")
+    export_metadata = ExportMetadata(
+        export_number=export_number,
+        periods=[ExportPeriod(period_from, period_to)],
+        analysis_date=analysis_date,
+        source_file_name=file.name,
+    )
 
     output = analyze_file(project, file, mapping, OUTPUT_DIR, export_metadata, replace_export)
     typer.echo(f"Готово: {output}")

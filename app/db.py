@@ -119,6 +119,23 @@ def init_db(db_path: Path | None = None) -> None:
                 metrics_json TEXT NOT NULL DEFAULT '{}',
                 FOREIGN KEY(export_id) REFERENCES analysis_exports(id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS analysis_export_periods (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                export_id INTEGER NOT NULL,
+                period_index INTEGER NOT NULL,
+                period_start TEXT NOT NULL,
+                period_end TEXT NOT NULL,
+                total_count INTEGER NOT NULL DEFAULT 0,
+                missed_count INTEGER NOT NULL DEFAULT 0,
+                missed_rate REAL NOT NULL DEFAULT 0,
+                quality_count INTEGER NOT NULL DEFAULT 0,
+                quality_rate REAL NOT NULL DEFAULT 0,
+                demand_count INTEGER NOT NULL DEFAULT 0,
+                demand_rate REAL NOT NULL DEFAULT 0,
+                metrics_json TEXT NOT NULL DEFAULT '{}',
+                UNIQUE(export_id, period_index),
+                FOREIGN KEY(export_id) REFERENCES analysis_exports(id) ON DELETE CASCADE
+            );
             CREATE TABLE IF NOT EXISTS processing_jobs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 run_id TEXT NOT NULL,
@@ -142,6 +159,11 @@ def init_db(db_path: Path | None = None) -> None:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(status_rules)")}
         if "pattern_key" not in columns:
             conn.execute("ALTER TABLE status_rules ADD COLUMN pattern_key TEXT")
+        breakdown_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(analysis_export_breakdowns)")
+        }
+        if "period_id" not in breakdown_columns:
+            conn.execute("ALTER TABLE analysis_export_breakdowns ADD COLUMN period_id INTEGER")
         conn.execute("DROP INDEX IF EXISTS uq_status_rules_project_pattern")
         rows = conn.execute(
             """

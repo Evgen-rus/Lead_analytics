@@ -25,11 +25,16 @@ SMALL_SAMPLE_THRESHOLD = 30
 
 @dataclass
 class ExportMetadata:
-    export_number: int
-    period_start: str
-    period_end: str
+    export_number: int | None
+    periods: list["ExportPeriod"]
     analysis_date: str | None = None
     source_file_name: str = ""
+
+
+@dataclass(frozen=True)
+class ExportPeriod:
+    period_start: str
+    period_end: str
 
 
 def today_text() -> str:
@@ -44,17 +49,23 @@ def normalize_date(value: str, field_name: str) -> str:
 
 
 def normalized_metadata(metadata: ExportMetadata, source_file_name: str) -> ExportMetadata:
-    if metadata.export_number <= 0:
+    if metadata.export_number is not None and metadata.export_number <= 0:
         raise ValueError("Номер выгрузки должен быть положительным")
-    period_start = normalize_date(metadata.period_start, "Дата начала периода")
-    period_end = normalize_date(metadata.period_end, "Дата конца периода")
-    if period_start > period_end:
-        raise ValueError("Дата начала периода не может быть позже даты конца")
+    if not metadata.periods:
+        raise ValueError("Добавьте хотя бы один период")
+    periods = []
+    for period in metadata.periods:
+        period_start = normalize_date(period.period_start, "Дата начала периода")
+        period_end = normalize_date(period.period_end, "Дата конца периода")
+        if period_start > period_end:
+            raise ValueError("Дата начала периода не может быть позже даты конца")
+        periods.append(ExportPeriod(period_start, period_end))
+    if len(set(periods)) != len(periods):
+        raise ValueError("Одинаковые периоды нельзя добавлять дважды")
     analysis_date = normalize_date(metadata.analysis_date, "Дата анализа") if metadata.analysis_date else today_text()
     return ExportMetadata(
         export_number=metadata.export_number,
-        period_start=period_start,
-        period_end=period_end,
+        periods=periods,
         analysis_date=analysis_date,
         source_file_name=metadata.source_file_name or source_file_name,
     )
@@ -63,31 +74,41 @@ def normalized_metadata(metadata: ExportMetadata, source_file_name: str) -> Expo
 def save_analysis_export(
     project: str,
     metadata: ExportMetadata,
-    total: pd.DataFrame,
-    breakdowns: dict[str, pd.DataFrame],
+    period_results: list[tuple[ExportPeriod, pd.DataFrame, dict[str, pd.DataFrame]]],
     report_file_name: str | None = None,
     replace: bool = False,
 ) -> int:
     db.ensure_project(project)
     meta = normalized_metadata(metadata, metadata.source_file_name)
-    total_metrics = _metrics_from_row(total.iloc[0] if not total.empty else {})
+    first_period, first_total, _ = period_results[0]
+    total_metrics = _metrics_from_row(first_total.iloc[0] if not first_total.empty else {})
     stamp = db.now_text()
 
     with db.connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        export_number = meta.export_number
+        if export_number is None:
+            export_number = int(
+                conn.execute(
+                    "SELECT COALESCE(MAX(export_number), 0) + 1 FROM analysis_exports WHERE project_code = ?",
+                    (project,),
+                ).fetchone()[0]
+            )
         existing = conn.execute(
             """
             SELECT id FROM analysis_exports
             WHERE project_code = ? AND export_number = ?
             """,
-            (project, meta.export_number),
+            (project, export_number),
         ).fetchone()
         if existing and not replace:
             raise ValueError(
-                f"Выгрузка №{meta.export_number} уже сохранена для проекта {project}. "
+                f"Выгрузка №{export_number} уже сохранена для проекта {project}. "
                 "Удалите ее или сохраните с заменой."
             )
         if existing and replace:
             conn.execute("DELETE FROM analysis_export_breakdowns WHERE export_id = ?", (existing["id"],))
+            conn.execute("DELETE FROM analysis_export_periods WHERE export_id = ?", (existing["id"],))
             conn.execute("DELETE FROM analysis_exports WHERE id = ?", (existing["id"],))
 
         cursor = conn.execute(
@@ -101,9 +122,9 @@ def save_analysis_export(
             """,
             (
                 project,
-                meta.export_number,
-                meta.period_start,
-                meta.period_end,
+                export_number,
+                first_period.period_start,
+                first_period.period_end,
                 meta.analysis_date,
                 meta.source_file_name,
                 report_file_name,
@@ -114,37 +135,64 @@ def save_analysis_export(
                 total_metrics["quality_rate"],
                 total_metrics["demand_count"],
                 total_metrics["demand_rate"],
-                json.dumps(_json_safe_metrics(total.iloc[0] if not total.empty else {}), ensure_ascii=False),
+                json.dumps(_json_safe_metrics(first_total.iloc[0] if not first_total.empty else {}), ensure_ascii=False),
                 stamp,
                 stamp,
             ),
         )
         export_id = int(cursor.lastrowid)
-        for breakdown_type, frame in breakdowns.items():
-            for item in _breakdown_rows(breakdown_type, frame):
-                conn.execute(
-                    """
-                    INSERT INTO analysis_export_breakdowns(
-                        export_id, breakdown_type, dimension_1, dimension_2,
-                        total_count, missed_count, missed_rate, quality_count, quality_rate,
-                        demand_count, demand_rate, metrics_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        export_id,
-                        breakdown_type,
-                        item["dimension_1"],
-                        item["dimension_2"],
-                        item["total_count"],
-                        item["missed_count"],
-                        item["missed_rate"],
-                        item["quality_count"],
-                        item["quality_rate"],
-                        item["demand_count"],
-                        item["demand_rate"],
-                        json.dumps(item["metrics"], ensure_ascii=False),
-                    ),
-                )
+        for period_index, (period, total, breakdowns) in enumerate(period_results, start=1):
+            metrics = _metrics_from_row(total.iloc[0] if not total.empty else {})
+            period_cursor = conn.execute(
+                """
+                INSERT INTO analysis_export_periods(
+                    export_id, period_index, period_start, period_end,
+                    total_count, missed_count, missed_rate, quality_count, quality_rate,
+                    demand_count, demand_rate, metrics_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    export_id,
+                    period_index,
+                    period.period_start,
+                    period.period_end,
+                    metrics["total_count"],
+                    metrics["missed_count"],
+                    metrics["missed_rate"],
+                    metrics["quality_count"],
+                    metrics["quality_rate"],
+                    metrics["demand_count"],
+                    metrics["demand_rate"],
+                    json.dumps(_json_safe_metrics(total.iloc[0] if not total.empty else {}), ensure_ascii=False),
+                ),
+            )
+            period_id = int(period_cursor.lastrowid)
+            for breakdown_type, frame in breakdowns.items():
+                for item in _breakdown_rows(breakdown_type, frame):
+                    conn.execute(
+                        """
+                        INSERT INTO analysis_export_breakdowns(
+                            export_id, period_id, breakdown_type, dimension_1, dimension_2,
+                            total_count, missed_count, missed_rate, quality_count, quality_rate,
+                            demand_count, demand_rate, metrics_json
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            export_id,
+                            period_id,
+                            breakdown_type,
+                            item["dimension_1"],
+                            item["dimension_2"],
+                            item["total_count"],
+                            item["missed_count"],
+                            item["missed_rate"],
+                            item["quality_count"],
+                            item["quality_rate"],
+                            item["demand_count"],
+                            item["demand_rate"],
+                            json.dumps(item["metrics"], ensure_ascii=False),
+                        ),
+                    )
     return export_id
 
 
@@ -160,6 +208,7 @@ def delete_analysis_export(project: str, export_number: int) -> bool:
         if not row:
             return False
         conn.execute("DELETE FROM analysis_export_breakdowns WHERE export_id = ?", (row["id"],))
+        conn.execute("DELETE FROM analysis_export_periods WHERE export_id = ?", (row["id"],))
         conn.execute("DELETE FROM analysis_exports WHERE id = ?", (row["id"],))
     return True
 
@@ -174,7 +223,24 @@ def list_exports(project: str) -> list[dict[str, Any]]:
             """,
             (project,),
         ).fetchall()
-    return [_export_row(row) for row in rows]
+        periods = conn.execute(
+            """
+            SELECT p.* FROM analysis_export_periods p
+            JOIN analysis_exports e ON e.id = p.export_id
+            WHERE e.project_code = ?
+            ORDER BY e.export_number ASC, p.period_index ASC
+            """,
+            (project,),
+        ).fetchall()
+    periods_by_export: dict[int, list[dict[str, Any]]] = {}
+    for period in periods:
+        periods_by_export.setdefault(int(period["export_id"]), []).append(_period_row(period))
+    result = []
+    for row in rows:
+        item = _export_row(row)
+        item["periods"] = periods_by_export.get(int(row["id"])) or [_legacy_period(item)]
+        result.append(item)
+    return result
 
 
 def build_project_summary(project: str) -> dict[str, pd.DataFrame | list[str]]:
@@ -182,12 +248,12 @@ def build_project_summary(project: str) -> dict[str, pd.DataFrame | list[str]]:
     if not exports:
         return {"Выводы": [f"По проекту {project} пока нет сохраненных выгрузок."]}
     return {
-        "Реестр выгрузок": build_registry(exports),
-        "Динамика к предыдущей": build_export_dynamics(exports),
+        "Реестр выгрузок": build_registry(_flatten_exports(exports)),
+        "Динамика к предыдущей": build_export_dynamics(_flatten_exports(exports)),
         "Источники + каналы": build_breakdown_dynamics(project, "source_channel"),
         "Домены + каналы": build_breakdown_dynamics(project, "domain_channel"),
         "Каналы": build_breakdown_dynamics(project, "channel"),
-        "Выводы": build_conclusions(exports, project),
+        "Выводы": build_conclusions(_flatten_exports(exports), project),
     }
 
 
@@ -198,11 +264,12 @@ def write_project_summary(project: str, output_dir: str | Path) -> Path:
 
 def write_project_comparison(project: str, output_dir: str | Path) -> Path:
     exports = list_exports(project)
+    flattened = _flatten_exports(exports)
     output = Path(output_dir) / f"{safe_filename(project)}_сравнение_выгрузок.xlsx"
     sheets: dict[str, pd.DataFrame | list[str]] = {
-        "Реестр выгрузок": build_registry(exports) if exports else pd.DataFrame(),
-        "Динамика к предыдущей": build_export_dynamics(exports) if exports else pd.DataFrame(),
-        "Выводы": build_conclusions(exports, project) if exports else [f"По проекту {project} пока нет сохраненных выгрузок."],
+        "Реестр выгрузок": build_registry(flattened) if exports else pd.DataFrame(),
+        "Динамика к предыдущей": build_export_dynamics(flattened) if exports else pd.DataFrame(),
+        "Выводы": build_conclusions(flattened, project) if exports else [f"По проекту {project} пока нет сохраненных выгрузок."],
     }
     return write_excel(output, sheets)
 
@@ -370,12 +437,15 @@ def _load_breakdowns(project: str, breakdown_type: str) -> list[dict[str, Any]]:
         rows = conn.execute(
             """
             SELECT
-                e.export_number, e.period_start, e.period_end,
+                e.export_number,
+                COALESCE(p.period_start, e.period_start) AS period_start,
+                COALESCE(p.period_end, e.period_end) AS period_end,
                 b.dimension_1, b.dimension_2,
                 b.total_count, b.missed_count, b.missed_rate,
                 b.quality_count, b.quality_rate, b.demand_count, b.demand_rate
             FROM analysis_export_breakdowns b
             JOIN analysis_exports e ON e.id = b.export_id
+            LEFT JOIN analysis_export_periods p ON p.id = b.period_id
             WHERE e.project_code = ? AND b.breakdown_type = ?
             ORDER BY b.dimension_1 COLLATE NOCASE, b.dimension_2 COLLATE NOCASE, e.export_number ASC
             """,
@@ -450,6 +520,42 @@ def _export_row(row: Any) -> dict[str, Any]:
         "demand_count": row["demand_count"],
         "demand_rate": row["demand_rate"],
     }
+
+
+def _period_row(row: Any) -> dict[str, Any]:
+    return {
+        "period_start": row["period_start"],
+        "period_end": row["period_end"],
+        "total_count": row["total_count"],
+        "missed_count": row["missed_count"],
+        "missed_rate": row["missed_rate"],
+        "quality_count": row["quality_count"],
+        "quality_rate": row["quality_rate"],
+        "demand_count": row["demand_count"],
+        "demand_rate": row["demand_rate"],
+    }
+
+
+def _legacy_period(item: dict[str, Any]) -> dict[str, Any]:
+    return {key: item[key] for key in (
+        "period_start",
+        "period_end",
+        "total_count",
+        "missed_count",
+        "missed_rate",
+        "quality_count",
+        "quality_rate",
+        "demand_count",
+        "demand_rate",
+    )}
+
+
+def _flatten_exports(exports: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {**item, **period}
+        for item in exports
+        for period in item.get("periods", [_legacy_period(item)])
+    ]
 
 
 def _row_get(row: Any, key: str) -> Any:

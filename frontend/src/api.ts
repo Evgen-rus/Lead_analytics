@@ -1,5 +1,6 @@
 import type {
   AnalyzeSetup,
+  AnalysisPeriod,
   ExportRecord,
   GoogleSheetsExport,
   Mapping,
@@ -104,12 +105,9 @@ export async function runAnalyzeRequest(
     project: string;
     mapping: Mapping;
     status_rules: Record<string, string>;
-    export_number: number;
-    period_start: string;
-    period_end: string;
+    periods: AnalysisPeriod[];
     analysis_date: string | null;
     source_file_name: string;
-    replace_export: boolean;
   }
 ): Promise<{ filename: string; preview: WorkbookPreview }> {
   return jsonRequest<{ filename: string; preview: WorkbookPreview }>(`${API}/runs/${runId}/analyze`, {
@@ -125,12 +123,9 @@ export async function queueAnalyzeJob(
     project: string;
     mapping: Mapping;
     status_rules: Record<string, string>;
-    export_number: number;
-    period_start: string;
-    period_end: string;
+    periods: AnalysisPeriod[];
     analysis_date: string | null;
     source_file_name: string;
-    replace_export: boolean;
   }
 ): Promise<ProcessingJob> {
   return jsonRequest<ProcessingJob>(`${API}/runs/${runId}/analyze/jobs`, {

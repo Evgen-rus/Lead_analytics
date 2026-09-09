@@ -904,19 +904,35 @@ export function ExportHistory({
                 <tr key={item.export_number}>
                   <td>{item.export_number}</td>
                   <td>
-                    {item.period_start} - {item.period_end}
+                    {item.periods.map((period) => (
+                      <div key={`${period.period_start}-${period.period_end}`}>
+                        {period.period_start} - {period.period_end}
+                      </div>
+                    ))}
                   </td>
                   <td>{item.analysis_date}</td>
                   <td>{item.source_file_name}</td>
-                  <td>{item.total_count}</td>
+                  <td>{item.periods.map((period) => <div key={`${period.period_start}-${period.period_end}`}>{period.total_count}</div>)}</td>
                   <td>
-                    {item.missed_count} / {formatPercent(item.missed_rate)}
+                    {item.periods.map((period) => (
+                      <div key={`${period.period_start}-${period.period_end}`}>
+                        {period.missed_count} / {formatPercent(period.missed_rate)}
+                      </div>
+                    ))}
                   </td>
                   <td>
-                    {item.quality_count} / {formatPercent(item.quality_rate)}
+                    {item.periods.map((period) => (
+                      <div key={`${period.period_start}-${period.period_end}`}>
+                        {period.quality_count} / {formatPercent(period.quality_rate)}
+                      </div>
+                    ))}
                   </td>
                   <td>
-                    {item.demand_count} / {formatPercent(item.demand_rate)}
+                    {item.periods.map((period) => (
+                      <div key={`${period.period_start}-${period.period_end}`}>
+                        {period.demand_count} / {formatPercent(period.demand_rate)}
+                      </div>
+                    ))}
                   </td>
                   <td>
                     <button className="dangerButton" disabled={loading} onClick={() => onAskDelete(item.export_number)}>

@@ -89,7 +89,7 @@ def _match(rule: StatusRule, text: str, status_text: str) -> bool:
     return False
 
 
-def _is_missing(value: object) -> bool:
+def is_missing_status(value: object) -> bool:
     if value is None:
         return True
     try:
@@ -102,7 +102,7 @@ def _is_missing(value: object) -> bool:
 
 
 def _clean_text(value: object) -> str:
-    if _is_missing(value):
+    if is_missing_status(value):
         return ""
     return str(value).strip()
 

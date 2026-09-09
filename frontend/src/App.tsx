@@ -29,6 +29,7 @@ import {
   WorkbookViewer
 } from "./components";
 import type {
+  AnalysisPeriod,
   AnalyzeSetup,
   ExportRecord,
   Mapping,
@@ -41,6 +42,7 @@ import type {
 } from "./types";
 
 const emptyMapping: Mapping = { sheet_name: "" };
+const emptyPeriod = (): AnalysisPeriod => ({ period_start: "", period_end: "" });
 
 function normalizeMapping(mapping: Mapping, sheetName: string): Mapping {
   return { ...mapping, sheet_name: mapping.sheet_name || sheetName };
@@ -64,11 +66,8 @@ export default function App() {
   const [analyzeMapping, setAnalyzeMapping] = useState<Mapping>(emptyMapping);
   const [statusRules, setStatusRules] = useState<Record<string, string>>({});
   const [analyzePreview, setAnalyzePreview] = useState<WorkbookPreview | null>(null);
-  const [exportNumber, setExportNumber] = useState("");
-  const [periodStart, setPeriodStart] = useState("");
-  const [periodEnd, setPeriodEnd] = useState("");
+  const [periods, setPeriods] = useState<AnalysisPeriod[]>([emptyPeriod()]);
   const [analysisDate, setAnalysisDate] = useState(todayIso());
-  const [replaceExport, setReplaceExport] = useState(false);
   const [step, setStep] = useState<Step>("upload");
   const [loading, setLoading] = useState(false);
   const [operation, setOperation] = useState("");
@@ -88,8 +87,14 @@ export default function App() {
     [upload, lkMapping.lkid_column, lkMapping.source_column, clientMapping.status_column]
   );
   const canAnalyze = useMemo(
-    () => upload && analyzeMapping.status_column && exportNumber && periodStart && periodEnd,
-    [upload, analyzeMapping.status_column, exportNumber, periodStart, periodEnd]
+    () => upload && analyzeMapping.status_column && analyzeMapping.date_column
+      && periods.length > 0
+      && periods.every((period) => period.period_start && period.period_end && period.period_start <= period.period_end),
+    [upload, analyzeMapping.status_column, analyzeMapping.date_column, periods]
+  );
+  const nextExportNumber = useMemo(
+    () => Math.max(0, ...savedExports.map((item) => item.export_number)) + 1,
+    [savedExports]
   );
 
   useEffect(() => {
@@ -157,6 +162,7 @@ export default function App() {
     setAnalyzeMapping(emptyMapping);
     setStatusRules({});
     setAnalyzePreview(null);
+    setPeriods([emptyPeriod()]);
     setGoogleSheetsUrl("");
     setStatusModalOpen(false);
     setActiveJob(null);
@@ -260,20 +266,13 @@ export default function App() {
     setOperationStage("prepare");
     setError("");
     try {
-      const numberValue = Number(exportNumber);
-      if (!Number.isInteger(numberValue) || numberValue <= 0) {
-        throw new Error("Укажите положительный номер выгрузки");
-      }
       const job = await queueAnalyzeJob(upload.run_id, {
         project,
         mapping: analyzeMapping,
         status_rules: statusRules,
-        export_number: numberValue,
-        period_start: periodStart,
-        period_end: periodEnd,
+        periods,
         analysis_date: analysisDate || null,
-        source_file_name: clientFile?.name || matchPreview?.filename || upload.client.filename,
-        replace_export: replaceExport
+        source_file_name: clientFile?.name || matchPreview?.filename || upload.client.filename
       });
       const completed = await waitForJob(job);
       setOperationStage("done");
@@ -528,26 +527,51 @@ export default function App() {
                 <p>Эти данные сохраняются в истории проекта и используются для сводки</p>
               </div>
             </div>
+            <div className="periodList">
+              {periods.map((period, index) => (
+                <div className="periodRow" key={index}>
+                  <strong>Период {index + 1}</strong>
+                  <label className="field">
+                    <span>От *</span>
+                    <input
+                      type="date"
+                      value={period.period_start}
+                      onChange={(event) => setPeriods((current) => current.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, period_start: event.target.value } : item
+                      ))}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>До *</span>
+                    <input
+                      type="date"
+                      value={period.period_end}
+                      onChange={(event) => setPeriods((current) => current.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, period_end: event.target.value } : item
+                      ))}
+                    />
+                  </label>
+                  {periods.length > 1 && (
+                    <button className="dangerButton" type="button" onClick={() =>
+                      setPeriods((current) => current.filter((_, itemIndex) => itemIndex !== index))
+                    }>
+                      Удалить
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button className="ghostButton" type="button" onClick={() => setPeriods((current) => [...current, emptyPeriod()])}>
+                Добавить период
+              </button>
+            </div>
             <div className="exportMetaGrid">
               <label className="field">
-                <span>Номер выгрузки *</span>
-                <input type="number" min="1" step="1" value={exportNumber} onChange={(event) => setExportNumber(event.target.value)} />
-              </label>
-              <label className="field">
-                <span>Период от *</span>
-                <input type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} />
-              </label>
-              <label className="field">
-                <span>Период до *</span>
-                <input type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} />
+                <span>Номер аналитики</span>
+                <input type="number" value={nextExportNumber} readOnly />
               </label>
               <label className="field">
                 <span>Дата анализа</span>
                 <input type="date" value={analysisDate} onChange={(event) => setAnalysisDate(event.target.value)} />
-              </label>
-              <label className="checkField">
-                <input type="checkbox" checked={replaceExport} onChange={(event) => setReplaceExport(event.target.checked)} />
-                <span>Заменить выгрузку с таким номером</span>
               </label>
             </div>
           </section>

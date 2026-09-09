@@ -19,6 +19,7 @@ from app.config import DATA_DIR, ensure_dirs
 from app.excel_reader import list_sheets, read_excel_sheet
 from app.export_history import (
     ExportMetadata,
+    ExportPeriod,
     delete_analysis_export,
     list_exports,
     write_project_comparison,
@@ -73,16 +74,30 @@ class AnalyzeSetupPayload(BaseModel):
     mapping: MappingPayload | None = None
 
 
+class AnalysisPeriodPayload(BaseModel):
+    period_start: date
+    period_end: date
+
+
 class AnalyzePayload(BaseModel):
     project: str
     mapping: MappingPayload
     status_rules: dict[str, str] = {}
-    export_number: int
-    period_start: date
-    period_end: date
+    periods: list[AnalysisPeriodPayload]
     analysis_date: date | None = None
     source_file_name: str | None = None
-    replace_export: bool = False
+
+
+class ExportPeriodRecord(BaseModel):
+    period_start: str
+    period_end: str
+    total_count: int
+    missed_count: int
+    missed_rate: float
+    quality_count: int
+    quality_rate: float
+    demand_count: int
+    demand_rate: float
 
 
 class ExportRecord(BaseModel):
@@ -98,6 +113,7 @@ class ExportRecord(BaseModel):
     quality_rate: float
     demand_count: int
     demand_rate: float
+    periods: list[ExportPeriodRecord]
 
 
 class SheetPreview(BaseModel):
@@ -302,6 +318,16 @@ def _validate_excel(file: UploadFile) -> None:
         raise HTTPException(status_code=400, detail=f"Файл {name} должен быть .xlsx")
 
 
+def _validate_periods(periods: list[AnalysisPeriodPayload]) -> None:
+    if not periods:
+        raise HTTPException(status_code=400, detail="Добавьте хотя бы один период")
+    if any(period.period_start > period.period_end for period in periods):
+        raise HTTPException(status_code=400, detail="Дата начала периода не может быть позже даты конца")
+    values = {(period.period_start, period.period_end) for period in periods}
+    if len(values) != len(periods):
+        raise HTTPException(status_code=400, detail="Одинаковые периоды нельзя добавлять дважды")
+
+
 def _validate_unknown_status_rules(unknown: list[str], status_rules: dict[str, str]) -> None:
     missing = [status for status in unknown if not status_rules.get(status, "").strip()]
     if missing:
@@ -391,13 +417,14 @@ def _run_processing_job(job: dict[str, object]) -> None:
                 mapping,
                 _output_dir(run_id),
                 ExportMetadata(
-                    export_number=int(payload["export_number"]),
-                    period_start=str(payload["period_start"]),
-                    period_end=str(payload["period_end"]),
+                    export_number=None,
+                    periods=[
+                        ExportPeriod(str(period["period_start"]), str(period["period_end"]))
+                        for period in payload["periods"]
+                    ],
                     analysis_date=payload.get("analysis_date"),
                     source_file_name=str(payload["source_file_name"]),
                 ),
-                replace_export=bool(payload["replace_export"]),
                 progress=report,
             )
             shutil.rmtree(_run_dir(run_id) / "input", ignore_errors=True)
@@ -668,13 +695,12 @@ def run_analyze(run_id: str, payload: AnalyzePayload) -> AnalyzeResponse:
     project = payload.project.strip()
     if not project:
         raise HTTPException(status_code=400, detail="Укажите проект")
-    if payload.export_number <= 0:
-        raise HTTPException(status_code=400, detail="Номер выгрузки должен быть положительным")
-    if payload.period_start > payload.period_end:
-        raise HTTPException(status_code=400, detail="Дата начала периода не может быть позже даты конца")
+    _validate_periods(payload.periods)
     mapping = _to_mapping(payload.mapping)
     if not mapping.status_column:
         raise HTTPException(status_code=400, detail="Для аналитики нужен статус")
+    if not mapping.date_column:
+        raise HTTPException(status_code=400, detail="Для аналитики по периодам нужна дата")
 
     input_file = _output_file(run_id, "match")
     mapping = prepare_analyze_mapping(input_file, mapping)
@@ -706,13 +732,14 @@ def run_analyze(run_id: str, payload: AnalyzePayload) -> AnalyzeResponse:
             mapping,
             _output_dir(run_id),
             ExportMetadata(
-                export_number=payload.export_number,
-                period_start=payload.period_start.isoformat(),
-                period_end=payload.period_end.isoformat(),
+                export_number=None,
+                periods=[
+                    ExportPeriod(item.period_start.isoformat(), item.period_end.isoformat())
+                    for item in payload.periods
+                ],
                 analysis_date=payload.analysis_date.isoformat() if payload.analysis_date else None,
                 source_file_name=payload.source_file_name or input_file.name,
             ),
-            replace_export=payload.replace_export,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -724,13 +751,12 @@ def queue_analyze(run_id: str, payload: AnalyzePayload) -> JobResponse:
     project = payload.project.strip()
     if not project:
         raise HTTPException(status_code=400, detail="Укажите проект")
-    if payload.export_number <= 0:
-        raise HTTPException(status_code=400, detail="Номер выгрузки должен быть положительным")
-    if payload.period_start > payload.period_end:
-        raise HTTPException(status_code=400, detail="Дата начала периода не может быть позже даты конца")
+    _validate_periods(payload.periods)
     mapping = _to_mapping(payload.mapping)
     if not mapping.status_column:
         raise HTTPException(status_code=400, detail="Для аналитики нужен статус")
+    if not mapping.date_column:
+        raise HTTPException(status_code=400, detail="Для аналитики по периодам нужна дата")
     input_file = _output_file(run_id, "match")
     mapping = prepare_analyze_mapping(input_file, mapping)
     if not mapping.status_column:

@@ -7,9 +7,8 @@ import pandas as pd
 
 from app.analytics import add_domain, status_summary, summarize
 from app.config import MATCHED_SHEET_NAME
-from app.conclusions import build_conclusions
 from app.excel_reader import list_sheets, read_excel_sheet
-from app.export_history import ExportMetadata, save_analysis_export
+from app.export_history import ExportMetadata, normalized_metadata, save_analysis_export
 from app.models import ColumnMapping
 from app.report_writer import write_excel
 from app.source_utils import NO_DATA, normalize_source, safe_filename
@@ -35,6 +34,7 @@ def analyze_file(
 
     data = pd.DataFrame()
     data["Дата"] = df[mapping.date_column] if mapping.date_column else pd.NaT
+    parsed_dates = pd.to_datetime(data["Дата"], errors="coerce")
     data["Телефон"] = df[mapping.phone_column] if mapping.phone_column else ""
     data["Канал"] = df[mapping.channel_column] if mapping.channel_column else NO_DATA
     data["Полный источник"] = (
@@ -57,49 +57,73 @@ def analyze_file(
     data["Правило"] = [item[1] for item in classifications]
     data = add_domain(data)
 
-    total = summarize(data, [])
-    total.insert(0, "Проект", project)
-    by_domain_channel = summarize(data, ["Домен", "Канал"]).sort_values(
-        ["Кач. %", "Сигнал спроса %", "Всего идентификаций"],
-        ascending=[False, False, False],
-    )
-    by_source_channel = summarize(data, ["Полный источник", "Канал"]).sort_values(
-        ["Кач. %", "Сигнал спроса %", "Всего идентификаций"],
-        ascending=[False, False, False],
-    )
-    channels = summarize(data, ["Канал"]).sort_values(
-        ["Сигнал спроса %", "Недозвон %"],
-        ascending=[False, True],
-    )
-    statuses = status_summary(data)
-    conclusions = build_conclusions(total, channels)
+    if not mapping.date_column:
+        raise ValueError("Для аналитики по периодам выберите колонку даты")
+    if not export_metadata:
+        raise ValueError("Для аналитики добавьте хотя бы один период")
+    metadata = normalized_metadata(export_metadata, path.name)
+    totals = []
+    period_results = []
+    report_sheets: dict[str, pd.DataFrame | list[str]] = {}
+    used_sheet_names = {"Итог"}
+    for period in metadata.periods:
+        start = pd.Timestamp(period.period_start)
+        end = pd.Timestamp(period.period_end) + pd.Timedelta(days=1)
+        period_data = data[(parsed_dates >= start) & (parsed_dates < end)].copy()
+        label = f"{period.period_start} - {period.period_end}"
+        short_label = f"{start:%d.%m}-{pd.Timestamp(period.period_end):%d.%m}"
+
+        total = summarize(period_data, [])
+        total.insert(0, "Проект", project)
+        total.insert(0, "Период", label)
+        totals.append(total)
+        by_domain_channel = summarize(period_data, ["Домен", "Канал"]).sort_values(
+            ["Кач. %", "Сигнал спроса %", "Всего идентификаций"],
+            ascending=[False, False, False],
+        )
+        by_source_channel = summarize(period_data, ["Полный источник", "Канал"]).sort_values(
+            ["Кач. %", "Сигнал спроса %", "Всего идентификаций"],
+            ascending=[False, False, False],
+        )
+        channels = summarize(period_data, ["Канал"]).sort_values(
+            ["Сигнал спроса %", "Недозвон %"],
+            ascending=[False, True],
+        )
+        breakdowns = {
+            "domain_channel": by_domain_channel,
+            "source_channel": by_source_channel,
+            "channel": channels,
+        }
+        period_results.append((period, total, breakdowns))
+        for prefix, frame in (
+            ("По доменам", by_domain_channel),
+            ("По источникам", by_source_channel),
+            ("По каналам", channels),
+            ("Статусы", status_summary(period_data)),
+            ("Данные", period_data),
+        ):
+            name = _unique_sheet_name(f"{prefix} {short_label}", used_sheet_names)
+            used_sheet_names.add(name)
+            report_sheets[name] = frame
 
     output = Path(output_dir) / f"{safe_filename(project)}_аналитика.xlsx"
     if progress:
         progress("Формирование аналитического отчёта", total_rows, total_rows)
-    written = write_excel(
-        output,
-        {
-            "Итог": total,
-            "Итог по доменам + каналам": by_domain_channel,
-            "Итог по источникам + каналам": by_source_channel,
-            "Статусы": statuses,
-            "Каналы": channels,
-            "Выводы": conclusions,
-            "Данные": data,
-        },
+    written = write_excel(output, {"Итог": pd.concat(totals, ignore_index=True), **report_sheets})
+    save_analysis_export(
+        project,
+        metadata,
+        period_results,
+        report_file_name=written.name,
+        replace=replace_export,
     )
-    if export_metadata:
-        save_analysis_export(
-            project,
-            export_metadata,
-            total,
-            {
-                "domain_channel": by_domain_channel,
-                "source_channel": by_source_channel,
-                "channel": channels,
-            },
-            report_file_name=written.name,
-            replace=replace_export,
-        )
     return written
+
+
+def _unique_sheet_name(name: str, used: set[str]) -> str:
+    if name not in used:
+        return name
+    index = 2
+    while f"{name} {index}" in used:
+        index += 1
+    return f"{name} {index}"

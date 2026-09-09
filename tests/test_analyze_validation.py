@@ -1,7 +1,9 @@
 import pytest
 from fastapi import HTTPException
 
-from backend.app.main import _validate_unknown_status_rules
+from datetime import date
+
+from backend.app.main import AnalysisPeriodPayload, _validate_periods, _validate_unknown_status_rules
 
 
 def test_unknown_status_rules_require_a_group_for_every_unknown_status():
@@ -19,3 +21,10 @@ def test_unknown_status_rules_accept_complete_valid_assignment():
 def test_unknown_status_rules_reject_unknown_group():
     with pytest.raises(HTTPException, match="Неизвестная группа"):
         _validate_unknown_status_rules(["Новый статус"], {"Новый статус": "Другая группа"})
+
+
+def test_periods_are_required_and_ordered():
+    with pytest.raises(HTTPException, match="хотя бы один период"):
+        _validate_periods([])
+    with pytest.raises(HTTPException, match="не может быть позже"):
+        _validate_periods([AnalysisPeriodPayload(period_start=date(2026, 2, 1), period_end=date(2026, 1, 1))])
