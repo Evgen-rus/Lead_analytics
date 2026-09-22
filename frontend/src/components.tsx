@@ -293,7 +293,11 @@ export function Stepper({ step }: { step: Step }) {
   return (
     <nav className="stepper" aria-label="Шаги обработки">
       {steps.map((item, index) => (
-        <div className={`stepItem ${index === current ? "active" : ""} ${index < current ? "done" : ""}`} key={item.id}>
+        <div
+          className={`stepItem ${index === current ? "active" : ""} ${index < current ? "done" : ""}`}
+          aria-current={index === current ? "step" : undefined}
+          key={item.id}
+        >
           <span>{index + 1}</span>
           <strong>{item.title}</strong>
         </div>
@@ -870,10 +874,20 @@ export function ExportHistory({
           <p>{hasProject ? "Сохранённые аналитики выбранного проекта" : "Введите проект или выберите сохранённый"}</p>
         </div>
         <div className="actions">
-          <a className={`download ${!exports.length ? "disabledLink" : ""}`} href={exports.length ? summaryUrl : "#"}>
+          <a
+            className={`download ${!exports.length ? "disabledLink" : ""}`}
+            href={exports.length ? summaryUrl : "#"}
+            aria-disabled={!exports.length}
+            tabIndex={exports.length ? undefined : -1}
+          >
             Скачать сводку
           </a>
-          <a className={`download secondary ${exports.length < 2 ? "disabledLink" : ""}`} href={exports.length >= 2 ? compareUrl : "#"}>
+          <a
+            className={`download secondary ${exports.length < 2 ? "disabledLink" : ""}`}
+            href={exports.length >= 2 ? compareUrl : "#"}
+            aria-disabled={exports.length < 2}
+            tabIndex={exports.length >= 2 ? undefined : -1}
+          >
             Сравнить
           </a>
         </div>
