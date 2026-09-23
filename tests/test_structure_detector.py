@@ -2,7 +2,7 @@ import pandas as pd
 
 from app.config import MATCHED_SHEET_NAME
 from app.models import ColumnMapping
-from app.structure_detector import choose_analyze_sheet, detect_analyze_mapping, prepare_analyze_mapping
+from app.structure_detector import choose_analyze_sheet, detect_analyze_mapping, detect_match_mapping, prepare_analyze_mapping
 
 
 def test_detect_analyze_mapping_from_excel(tmp_path):
@@ -10,7 +10,7 @@ def test_detect_analyze_mapping_from_excel(tmp_path):
     pd.DataFrame(
         {
             "Дата": ["2026-01-01"],
-            "Телефон": ["79231234567"],
+            "Номера": ["79231234567"],
             "Канал": ["A"],
             "Источники": ["site.ru_12345"],
             "Стадия сделки": ["Недозвон"],
@@ -18,10 +18,16 @@ def test_detect_analyze_mapping_from_excel(tmp_path):
     ).to_excel(path, index=False)
     mapping = detect_analyze_mapping(path)
     assert mapping.date_column == "Дата"
-    assert mapping.phone_column == "Телефон"
+    assert mapping.phone_column == "Номера"
     assert mapping.channel_column == "Канал"
     assert mapping.source_column == "Источники"
     assert mapping.status_column == "Стадия сделки"
+
+
+def test_detect_match_mapping_recognizes_phone_numbers_column(tmp_path):
+    path = tmp_path / "match.xlsx"
+    pd.DataFrame({"Номера": ["79231234567"], "Статус": ["Новый"]}).to_excel(path, index=False)
+    assert detect_match_mapping(path, "client").phone_column == "Номера"
 
 
 def test_detect_analyze_mapping_prefers_matched_sheet(tmp_path):

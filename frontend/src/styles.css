@@ -45,12 +45,12 @@ button,
 }
 
 button:not(:disabled):hover,
-.download:not(.disabledLink):hover {
+.download:hover {
   background: #0b5b78;
 }
 
 button:not(:disabled):active,
-.download:not(.disabledLink):active {
+.download:active {
   scale: 0.96;
 }
 
@@ -70,11 +70,6 @@ select:focus-visible {
   background: #273445;
 }
 
-.download.disabledLink {
-  pointer-events: none;
-  opacity: 0.55;
-}
-
 .ghostButton {
   border: 1px solid #cfd8e3;
   background: #fff;
@@ -85,6 +80,12 @@ select:focus-visible {
   border-color: #91a3b5;
   background: #f5f8fa;
   color: #17202a;
+}
+
+.ghostButton:disabled {
+  border-color: #d0d5dd;
+  background: #f2f4f7;
+  color: #667085;
 }
 
 .dangerButton {
@@ -98,7 +99,12 @@ select:focus-visible {
 
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.55;
+  border: 1px solid #d0d5dd;
+  background: #e4e7ec;
+  color: #667085;
+  opacity: 1;
+  box-shadow: none;
+  scale: 1;
 }
 
 main {
@@ -168,6 +174,10 @@ p {
   animation: pulse 1100ms ease-in-out infinite;
 }
 
+.statusBadge.needsInput span {
+  background: #f79009;
+}
+
 .stepper {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -228,7 +238,8 @@ p {
 }
 
 .alert {
-  border-left: 4px solid #b42318;
+  border: 1px solid #f2b8b5;
+  border-radius: 6px;
   background: #fff4f2;
   color: #912018;
   padding: 12px 14px;
@@ -287,10 +298,74 @@ p {
   gap: 12px;
 }
 
+.uploadHint {
+  margin-top: 14px;
+  color: #667085;
+}
+
+.mappingGrid {
+  grid-template-columns: 1fr;
+}
+
+.mappingFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.mappingFields h3 {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #344054;
+  font-size: 14px;
+}
+
+.optionalMappings {
+  border-top: 1px solid #e4e7ec;
+  padding-top: 12px;
+}
+
+.optionalMappings summary {
+  color: #344054;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.optionalMappings summary span {
+  margin-left: 8px;
+  color: #667085;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.optionalMappings .mappingFields {
+  margin-top: 12px;
+}
+
 .periodList {
   display: grid;
   gap: 12px;
   margin-bottom: 16px;
+}
+
+.periodBlock {
+  display: grid;
+  gap: 6px;
+}
+
+.periodMessage,
+.runReviewHint {
+  margin: 0;
+  font-size: 13px;
+}
+
+.periodMessage {
+  padding-left: 102px;
+  color: #526579;
+}
+
+.runReviewHint {
+  color: #b42318;
 }
 
 .periodList > .ghostButton {
@@ -402,6 +477,56 @@ p {
 
 .fieldError {
   color: #b42318;
+}
+
+.mappingField small {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.mappingNote {
+  color: #526579;
+}
+
+.mappingSample {
+  color: #344054;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mappingWarning select {
+  border-color: #b42318;
+}
+
+.statusCount {
+  display: block;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.previewDisclosure {
+  margin-bottom: 16px;
+}
+
+.previewDisclosure summary {
+  width: fit-content;
+  color: #0b536d;
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.runReview {
+  position: sticky;
+  bottom: 12px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  box-shadow: 0 8px 24px rgba(16, 32, 44, 0.14);
 }
 
 .fileBadge {
@@ -635,6 +760,19 @@ tbody tr:hover {
 .metricCard small {
   color: #0f6b8d;
   font-weight: 700;
+}
+
+.matchSummary .metricCard:first-child {
+  background: #f0f8fa;
+}
+
+.matchSummary .metricCard:first-child strong {
+  color: #0b5b78;
+  font-size: 30px;
+}
+
+.analyticsSummary {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .emptyState {
@@ -1044,9 +1182,19 @@ tbody tr:hover {
     flex-wrap: wrap;
   }
 
+  .runReview {
+    position: static;
+    box-shadow: none;
+  }
+
+  .periodMessage {
+    padding-left: 0;
+  }
+
   .stepper,
   .uploadGrid,
   .mappingGrid,
+  .mappingFields,
   .exportMetaGrid,
   .periodRow,
   .twoColumn,

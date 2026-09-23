@@ -76,6 +76,7 @@ export type AnalyzeSetup = {
   mapping: Mapping;
   sheets: SheetPreview[];
   unknown_statuses: string[];
+  unknown_status_counts: Record<string, number>;
   status_groups: string[];
 };
 

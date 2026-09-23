@@ -71,7 +71,7 @@ def detect_analyze_mapping(path: str | Path, sheet_name: str | None = None) -> C
     df = read_excel_sheet(path, sheet)
     columns = list(df.columns)
     date_col = _find_by_names(columns, ["Дата", "Дата создания", "date", "created"])
-    phone_col = _find_by_names(columns, ["Телефон", "phone"])
+    phone_col = _find_by_names(columns, ["Телефон", "Номера", "phone"])
     status_col = _find_by_names(
         columns,
         [
@@ -135,7 +135,7 @@ def detect_match_mapping(path: str | Path, role: str, sheet_name: str | None = N
     df = read_excel_sheet(path, sheet)
     columns = list(df.columns)
     lkid_col = _find_by_names(columns, ["LKID", "lk id", "lk_id", "lead id"])
-    phone_col = _find_by_names(columns, ["Телефон", "phone"])
+    phone_col = _find_by_names(columns, ["Телефон", "Номера", "phone"])
     date_col = _find_by_names(columns, ["Дата", "Дата создания", "date", "created"])
     source_col = _find_by_names(columns, ["Источники", "Полный источник", "Источник", "UTM Campaign", "source"])
     status_col = None

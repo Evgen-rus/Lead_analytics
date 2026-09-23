@@ -4,6 +4,7 @@ import math
 import shutil
 import threading
 import uuid
+from collections import Counter
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -29,7 +30,7 @@ from app.google_sheets import export_workbook
 from app.matcher import match_files
 from app.models import ColumnMapping, StatusRule
 from app.pipeline import analyze_file
-from app.status_classifier import ALL_GROUPS, load_json_rules, unknown_statuses
+from app.status_classifier import ALL_GROUPS, is_missing_status, load_json_rules, unknown_statuses
 from app.structure_detector import prepare_analyze_mapping, detect_match_mapping
 
 RUNS_DIR = DATA_DIR / "runs"
@@ -150,6 +151,7 @@ class AnalyzeSetupResponse(BaseModel):
     mapping: MappingPayload
     sheets: list[SheetPreview]
     unknown_statuses: list[str]
+    unknown_status_counts: dict[str, int]
     status_groups: list[str]
 
 
@@ -342,6 +344,11 @@ def _validate_unknown_status_rules(unknown: list[str], status_rules: dict[str, s
     ]
     if invalid_groups:
         raise HTTPException(status_code=400, detail="Неизвестная группа статуса")
+
+
+def _unknown_status_counts(values: list[object], unknown: list[str]) -> dict[str, int]:
+    counts = Counter(str(value).strip() for value in values if not is_missing_status(value))
+    return {status: counts[status] for status in unknown}
 
 
 def _job_response(job: dict[str, object]) -> JobResponse:
@@ -686,6 +693,7 @@ def analyze_setup(run_id: str, payload: AnalyzeSetupPayload) -> AnalyzeSetupResp
         mapping=_from_mapping(mapping),
         sheets=_inspect_workbook(match_file),
         unknown_statuses=unknown,
+        unknown_status_counts=_unknown_status_counts(df[mapping.status_column].tolist(), unknown) if mapping.status_column else {},
         status_groups=ALL_GROUPS,
     )
 

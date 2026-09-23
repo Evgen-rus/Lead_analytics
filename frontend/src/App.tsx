@@ -52,6 +52,12 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function periodIssue(period: AnalysisPeriod): string | null {
+  if (!period.period_start || !period.period_end) return "Укажите даты начала и окончания периода.";
+  if (period.period_start > period.period_end) return "Дата начала не может быть позже даты окончания.";
+  return null;
+}
+
 export default function App() {
   const [project, setProject] = useState("");
   const [projects, setProjects] = useState<string[]>([]);
@@ -92,10 +98,19 @@ export default function App() {
       && periods.every((period) => period.period_start && period.period_end && period.period_start <= period.period_end),
     [upload, analyzeMapping.status_column, analyzeMapping.date_column, periods]
   );
+  const analyzeBlockedHint = !analyzeMapping.status_column || !analyzeMapping.date_column
+    ? "Выберите обязательные колонки «Статус» и «Дата» выше."
+    : periods.length === 0 ? "Добавьте хотя бы один период анализа."
+    : periods.some(periodIssue) ? "Исправьте даты в отмеченном периоде выше." : null;
   const nextExportNumber = useMemo(
     () => Math.max(0, ...savedExports.map((item) => item.export_number)) + 1,
     [savedExports]
   );
+  const statusText = loading
+    ? operation || "Выполняется..."
+    : step === "upload" ? canUpload ? "Файлы готовы к проверке" : "Выберите проект и файлы"
+    : step === "mapping" ? "Проверьте колонки"
+    : step === "analyze" ? "Настройте аналитику" : "Отчёт готов";
 
   useEffect(() => {
     refreshProjects();
@@ -380,9 +395,9 @@ export default function App() {
           <h1>Lead Analytics</h1>
           <p>Локальное сопоставление и аналитика Excel-файлов</p>
         </div>
-        <div className={`statusBadge ${loading ? "busy" : "ready"}`}>
+        <div className={`statusBadge ${loading ? "busy" : step === "upload" && !canUpload ? "needsInput" : "ready"}`}>
           <span aria-hidden="true" />
-          {loading ? operation || "Выполняется..." : "Готово к работе"}
+          {statusText}
         </div>
       </section>
 
@@ -417,7 +432,7 @@ export default function App() {
             <div className="panelHeader">
               <div>
                 <h2>Проект и файлы</h2>
-                <p>Выбери проект, нашу выгрузку и выгрузку клиента</p>
+                <p>Выберите проект, нашу выгрузку и выгрузку клиента</p>
               </div>
               <div className="actions">
                 <button className="ghostButton" onClick={openRulesManager} disabled={!project.trim() || loading}>
@@ -430,7 +445,7 @@ export default function App() {
             </div>
             <div className="uploadGrid">
               <label className="field">
-                <span>Проект</span>
+                <span>Проект *</span>
                 <ProjectCombo value={project} projects={projects} disabled={loading} onChange={setProject} />
               </label>
               <FileDropZone
@@ -452,6 +467,7 @@ export default function App() {
                 }}
               />
             </div>
+            {!canUpload && <p className="uploadHint">Чтобы продолжить, выберите проект и обе Excel-выгрузки.</p>}
           </section>
           <ExportHistory
             project={project}
@@ -470,7 +486,7 @@ export default function App() {
           <div className="sectionBar">
             <div>
               <span>Проверка колонок</span>
-              <p>Автовыбор уже подставлен, проверь обязательные поля перед сопоставлением</p>
+              <p>Автовыбор уже применён. Проверьте обязательные поля перед сопоставлением.</p>
             </div>
             <div className="actions">
               <button className="ghostButton" onClick={() => setStep("upload")} disabled={loading}>
@@ -499,9 +515,6 @@ export default function App() {
               <button className="ghostButton" onClick={() => setStep("mapping")} disabled={loading}>
                 Назад
               </button>
-              <button onClick={requestAnalyze} disabled={!canAnalyze || loading}>
-                Сделать аналитику
-              </button>
             </div>
           </div>
 
@@ -528,38 +541,47 @@ export default function App() {
               </div>
             </div>
             <div className="periodList">
-              {periods.map((period, index) => (
-                <div className="periodRow" key={index}>
-                  <strong>Период {index + 1}</strong>
-                  <label className="field">
-                    <span>От *</span>
-                    <input
-                      type="date"
-                      value={period.period_start}
-                      onChange={(event) => setPeriods((current) => current.map((item, itemIndex) =>
-                        itemIndex === index ? { ...item, period_start: event.target.value } : item
-                      ))}
-                    />
-                  </label>
-                  <label className="field">
-                    <span>До *</span>
-                    <input
-                      type="date"
-                      value={period.period_end}
-                      onChange={(event) => setPeriods((current) => current.map((item, itemIndex) =>
-                        itemIndex === index ? { ...item, period_end: event.target.value } : item
-                      ))}
-                    />
-                  </label>
-                  {periods.length > 1 && (
-                    <button className="dangerButton" type="button" onClick={() =>
-                      setPeriods((current) => current.filter((_, itemIndex) => itemIndex !== index))
-                    }>
-                      Удалить
-                    </button>
-                  )}
-                </div>
-              ))}
+              {periods.map((period, index) => {
+                const issue = periodIssue(period);
+                const invalidOrder = Boolean(period.period_start && period.period_end && period.period_start > period.period_end);
+                return (
+                  <div className="periodBlock" key={index}>
+                    <div className="periodRow">
+                      <strong>Период {index + 1}</strong>
+                      <label className="field">
+                        <span>От *</span>
+                        <input
+                          type="date"
+                          value={period.period_start}
+                          aria-invalid={invalidOrder || !period.period_start}
+                          onChange={(event) => setPeriods((current) => current.map((item, itemIndex) =>
+                            itemIndex === index ? { ...item, period_start: event.target.value } : item
+                          ))}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>До *</span>
+                        <input
+                          type="date"
+                          value={period.period_end}
+                          aria-invalid={invalidOrder || !period.period_end}
+                          onChange={(event) => setPeriods((current) => current.map((item, itemIndex) =>
+                            itemIndex === index ? { ...item, period_end: event.target.value } : item
+                          ))}
+                        />
+                      </label>
+                      {periods.length > 1 && (
+                        <button className="dangerButton" type="button" onClick={() =>
+                          setPeriods((current) => current.filter((_, itemIndex) => itemIndex !== index))
+                        }>
+                          Удалить
+                        </button>
+                      )}
+                    </div>
+                    {issue && <p className={`periodMessage ${invalidOrder ? "fieldError" : ""}`}>{issue}</p>}
+                  </div>
+                );
+              })}
               <button className="ghostButton" type="button" onClick={() => setPeriods((current) => [...current, emptyPeriod()])}>
                 Добавить период
               </button>
@@ -577,7 +599,23 @@ export default function App() {
           </section>
 
           <MappingPanel title="Колонки аналитики" file={analyzeSetup} mapping={analyzeMapping} role="analyze" onChange={setAnalyzeMapping} />
-          {matchPreview && <WorkbookViewer title="Предпросмотр сопоставления" workbook={matchPreview} />}
+          {matchPreview && (
+            <details className="previewDisclosure">
+              <summary>Посмотреть все листы сопоставления</summary>
+              <WorkbookViewer title="Предпросмотр сопоставления" workbook={matchPreview} />
+            </details>
+          )}
+          <section className="panel runReview">
+            <div>
+              <h2>Проверить и запустить</h2>
+              <p>Аналитика №{nextExportNumber} · дата {analysisDate || "не указана"} · {periods.map((period) =>
+                period.period_start && period.period_end ? `${period.period_start} — ${period.period_end}` : "период не заполнен"
+              ).join(" · ")}</p>
+              {!canAnalyze && !loading && analyzeBlockedHint && <p className="runReviewHint">{analyzeBlockedHint}</p>}
+              {analyzeSetup.unknown_statuses.length > 0 && <p>{analyzeSetup.unknown_statuses.length} неизвестных статусов потребуют выбора группы перед запуском.</p>}
+            </div>
+            <button onClick={requestAnalyze} disabled={!canAnalyze || loading}>Сделать аналитику</button>
+          </section>
           <StatusRulesModal
             open={statusModalOpen}
             setup={analyzeSetup}

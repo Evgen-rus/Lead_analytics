@@ -167,7 +167,7 @@ export function ProjectCombo({
       <input
         value={value}
         disabled={disabled}
-        placeholder="Введите проект или выберите сохраненный"
+        placeholder="Введите проект или выберите сохранённый"
         onFocus={() => setOpen(true)}
         onChange={(event) => {
           onChange(event.target.value);
@@ -255,16 +255,20 @@ export function SelectField({
   value,
   columns,
   required = false,
+  note,
+  sample,
   onChange
 }: {
   label: string;
   value?: string | null;
   columns: string[];
   required?: boolean;
+  note?: string;
+  sample?: string;
   onChange: (value: string | null) => void;
 }) {
   return (
-    <label className="field">
+    <label className={`field mappingField ${required && !value ? "mappingWarning" : ""}`}>
       <span>
         {label}
         {required ? " *" : ""}
@@ -277,6 +281,8 @@ export function SelectField({
           </option>
         ))}
       </select>
+      {note && <small className={note.startsWith("Проверьте") || note.startsWith("Обязательное") ? "fieldError" : "mappingNote"}>{note}</small>}
+      {value && <small className="mappingSample" title={sample}>Пример: {sample || "нет значений в предпросмотре"}</small>}
     </label>
   );
 }
@@ -369,7 +375,7 @@ export function PreviewTable({ sheet }: { sheet: SheetPreview }) {
             {sheet.rows.slice(0, 12).map((row, index) => (
               <tr key={index}>
                 {columns.map((column) => (
-                  <td key={column}>{String(row[column] ?? "")}</td>
+                  <td key={column} title={String(row[column] ?? "")}>{String(row[column] ?? "")}</td>
                 ))}
               </tr>
             ))}
@@ -405,10 +411,35 @@ export function MappingPanel({
   const effectiveMapping = lockAnalyzeSheet ? { ...mapping, sheet_name: MATCHED_SHEET_NAME } : mapping;
   const columns = sheetColumns(file, effectiveMapping);
   const active = activeSheet(file, effectiveMapping.sheet_name);
+  const detected = "detected" in file ? file.detected : file.mapping;
 
   function patch(update: Partial<Mapping>) {
     onChange({ ...effectiveMapping, ...update });
   }
+
+  function field(label: string, key: keyof Mapping, required = false) {
+    const value = mapping[key];
+    const sample = active?.rows.map((row) => displayValue(row[String(value)])).find((item) => item.trim());
+    const note = !value
+      ? required ? "Обязательное поле не выбрано" : undefined
+      : !columns.includes(value) ? "Проверьте: колонки нет на выбранном листе"
+      : !sample ? "Проверьте: в предпросмотре нет значений"
+      : detected[key] === value ? "Определено автоматически" : "Выбрано вручную";
+    return <SelectField key={key} label={label} value={value} columns={columns} required={required} note={note} sample={sample} onChange={(next) => patch({ [key]: next })} />;
+  }
+
+  const requiredFields: Array<[string, keyof Mapping]> = role === "lk"
+    ? [["LKID", "lkid_column"], ["Полный источник", "source_column"]]
+    : role === "client" ? [["Статус", "status_column"]] : [["Статус", "status_column"], ["Дата", "date_column"]];
+  const matchingFields: Array<[string, keyof Mapping]> = role === "lk"
+    ? [["Телефон", "phone_column"]]
+    : role === "client" ? [["LKID", "lkid_column"], ["Источник", "source_column"], ["Телефон", "phone_column"]] : [];
+  const optionalFields: Array<[string, keyof Mapping]> = role === "lk"
+    ? [["Дата", "date_column"]]
+    : role === "client"
+      ? [["Дата", "date_column"], ["Комментарий", "comment_column"]]
+      : [["Полный источник", "source_column"], ["Канал", "channel_column"], ["Телефон", "phone_column"], ["Комментарий", "comment_column"]];
+  const selectedOptionalCount = optionalFields.filter(([, key]) => mapping[key]).length;
 
   return (
     <section className="panel">
@@ -418,56 +449,27 @@ export function MappingPanel({
           <p>{file.filename}</p>
         </div>
       </div>
-      <SheetTabs
-        sheets={sheets}
-        value={effectiveMapping.sheet_name}
-        onChange={(sheetName) => {
-          if (!lockAnalyzeSheet) patch({ sheet_name: sheetName });
-        }}
-      />
       <div className="mappingGrid">
-        <label className="field">
-          <span>Лист *</span>
-          <select
-            value={effectiveMapping.sheet_name}
-            disabled={lockAnalyzeSheet}
-            onChange={(event) => patch({ sheet_name: event.target.value })}
-          >
-            {sheets.map((sheet) => (
-              <option value={sheet.name} key={sheet.name}>
-                {sheet.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {role === "lk" && (
-          <>
-            <SelectField label="LKID" value={mapping.lkid_column} columns={columns} required onChange={(value) => patch({ lkid_column: value })} />
-            <SelectField label="Полный источник" value={mapping.source_column} columns={columns} required onChange={(value) => patch({ source_column: value })} />
-            <SelectField label="Телефон" value={mapping.phone_column} columns={columns} onChange={(value) => patch({ phone_column: value })} />
-            <SelectField label="Дата" value={mapping.date_column} columns={columns} onChange={(value) => patch({ date_column: value })} />
-          </>
+        {sheets.length > 1 && (
+          <label className="field">
+            <span>Лист</span>
+            <select value={effectiveMapping.sheet_name} onChange={(event) => patch({ sheet_name: event.target.value })}>
+              {sheets.map((sheet) => <option value={sheet.name} key={sheet.name}>{sheet.name}</option>)}
+            </select>
+          </label>
         )}
-        {role === "client" && (
-          <>
-            <SelectField label="Статус" value={mapping.status_column} columns={columns} required onChange={(value) => patch({ status_column: value })} />
-            <SelectField label="LKID" value={mapping.lkid_column} columns={columns} onChange={(value) => patch({ lkid_column: value })} />
-            <SelectField label="Источник" value={mapping.source_column} columns={columns} onChange={(value) => patch({ source_column: value })} />
-            <SelectField label="Телефон" value={mapping.phone_column} columns={columns} onChange={(value) => patch({ phone_column: value })} />
-            <SelectField label="Дата" value={mapping.date_column} columns={columns} onChange={(value) => patch({ date_column: value })} />
-            <SelectField label="Комментарий" value={mapping.comment_column} columns={columns} onChange={(value) => patch({ comment_column: value })} />
-          </>
-        )}
-        {role === "analyze" && (
-          <>
-            <SelectField label="Статус" value={mapping.status_column} columns={columns} required onChange={(value) => patch({ status_column: value })} />
-            <SelectField label="Полный источник" value={mapping.source_column} columns={columns} onChange={(value) => patch({ source_column: value })} />
-            <SelectField label="Канал" value={mapping.channel_column} columns={columns} onChange={(value) => patch({ channel_column: value })} />
-            <SelectField label="Дата" value={mapping.date_column} columns={columns} onChange={(value) => patch({ date_column: value })} />
-            <SelectField label="Телефон" value={mapping.phone_column} columns={columns} onChange={(value) => patch({ phone_column: value })} />
-            <SelectField label="Комментарий" value={mapping.comment_column} columns={columns} onChange={(value) => patch({ comment_column: value })} />
-          </>
-        )}
+        <div className="mappingFields">
+          <h3>Обязательные колонки</h3>
+          {requiredFields.map(([label, key]) => field(label, key, true))}
+        </div>
+        {matchingFields.length > 0 && <div className="mappingFields">
+          <h3>Колонки для сопоставления</h3>
+          {matchingFields.map(([label, key]) => field(label, key))}
+        </div>}
+        <details className="optionalMappings">
+          <summary>Дополнительные колонки <span>{selectedOptionalCount} выбрано</span></summary>
+          <div className="mappingFields">{optionalFields.map(([label, key]) => field(label, key))}</div>
+        </details>
       </div>
       {active && <PreviewTable sheet={active} />}
     </section>
@@ -502,9 +504,9 @@ export function MatchSummary({ workbook }: { workbook: WorkbookPreview }) {
   const rate = matchedNumber !== null && totalNumber ? matchedNumber / totalNumber : null;
 
   return (
-    <div className="summaryGrid">
-      <MetricCard label="Строк в ЛК" value={total || "0"} />
+    <div className="summaryGrid matchSummary">
       <MetricCard label="Сопоставлено" value={matched || "0"} hint={rate !== null ? formatPercent(rate) : undefined} />
+      <MetricCard label="Строк в ЛК" value={total || "0"} />
       <MetricCard label="Не найдено из ЛК" value={unmatched || "0"} />
       <MetricCard label="Дублей клиента" value={duplicateRows || "0"} />
     </div>
@@ -514,7 +516,7 @@ export function MatchSummary({ workbook }: { workbook: WorkbookPreview }) {
 export function AnalyzeSummary({ workbook }: { workbook: WorkbookPreview }) {
   const row = firstRow(workbook, "Итог");
   return (
-    <div className="summaryGrid">
+    <div className="summaryGrid analyticsSummary">
       <MetricCard label="Всего идентификаций" value={displayValue(row["Всего идентификаций"]) || "0"} />
       <MetricCard label="Качественные" value={displayValue(row["Качественные"]) || "0"} hint={formatMetric(row["Кач. %"])} />
       <MetricCard label="Недозвон" value={displayValue(row["Недозвон"]) || "0"} hint={formatMetric(row["Недозвон %"])} />
@@ -554,7 +556,7 @@ export function StatusRulesPanel({
       <div className="panelHeader compact">
         <div>
           <h2>Неизвестные статусы</h2>
-          <p>Выбери группу для каждого статуса</p>
+          <p>Выберите группу для каждого статуса</p>
         </div>
       </div>
       <div className="rulesGrid">
@@ -607,8 +609,9 @@ export function StatusRulesModal({
       <section className="modalPanel">
         <div className="modalHeader">
           <div>
-            <h2 id="status-modal-title">Проверь статусы перед аналитикой</h2>
+            <h2 id="status-modal-title">Проверьте статусы перед аналитикой</h2>
             <p>{count} {count === 1 ? "статус требует" : "статуса требуют"} ручного выбора группы</p>
+            <p>Выбранная группа влияет на показатели отчёта и сохранится как правило проекта.</p>
           </div>
           <button className="ghostButton iconButton" type="button" disabled={loading} onClick={onCancel} aria-label="Закрыть">
             x
@@ -617,7 +620,7 @@ export function StatusRulesModal({
         <div className="rulesGrid modalRules">
           {setup.unknown_statuses.map((status) => (
             <label className="ruleRow" key={status}>
-              <span>{status}</span>
+              <span>{status}<small className="statusCount">{setup.unknown_status_counts[status] ?? 0} строк в файле</small></span>
               <select
                 value={statusRules[status] ?? ""}
                 disabled={loading}
@@ -863,8 +866,8 @@ export function ExportHistory({
   onConfirmDelete: () => void;
 }) {
   const hasProject = project.trim().length > 0;
-  const summaryUrl = hasProject ? `${API}/summary/download?${projectQuery(project)}` : "#";
-  const compareUrl = hasProject ? `${API}/compare/download?${projectQuery(project)}` : "#";
+  const summaryUrl = `${API}/summary/download?${projectQuery(project)}`;
+  const compareUrl = `${API}/compare/download?${projectQuery(project)}`;
 
   return (
     <section className="panel historyPanel">
@@ -873,26 +876,14 @@ export function ExportHistory({
           <h2>История выгрузок</h2>
           <p>{hasProject ? "Сохранённые аналитики выбранного проекта" : "Введите проект или выберите сохранённый"}</p>
         </div>
-        <div className="actions">
-          <a
-            className={`download ${!exports.length ? "disabledLink" : ""}`}
-            href={exports.length ? summaryUrl : "#"}
-            aria-disabled={!exports.length}
-            tabIndex={exports.length ? undefined : -1}
-          >
-            Скачать сводку
-          </a>
-          <a
-            className={`download secondary ${exports.length < 2 ? "disabledLink" : ""}`}
-            href={exports.length >= 2 ? compareUrl : "#"}
-            aria-disabled={exports.length < 2}
-            tabIndex={exports.length >= 2 ? undefined : -1}
-          >
-            Сравнить
-          </a>
-        </div>
+        {exports.length > 0 && <div className="actions">
+          <a className="download" href={summaryUrl}>Скачать сводку</a>
+          {exports.length >= 2
+            ? <a className="download secondary" href={compareUrl}>Сравнить</a>
+            : <button className="ghostButton" disabled title="Сравнение доступно после двух аналитик">Сравнить</button>}
+        </div>}
       </div>
-      {exports.length === 0 ? (
+      {!hasProject ? null : exports.length === 0 ? (
         <div className="emptyState">
           <strong>Сохранённых выгрузок пока нет.</strong>
           <span>После первой аналитики здесь появятся периоды, файлы и ключевые показатели.</span>
