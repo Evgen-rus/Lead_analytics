@@ -22,6 +22,7 @@ from app.excel_reader import list_sheets, read_excel_sheet
 from app.export_history import (
     ExportMetadata,
     ExportPeriod,
+    analysis_report_path,
     delete_analysis_export,
     list_exports,
     write_project_comparison,
@@ -103,7 +104,9 @@ class ExportPeriodRecord(BaseModel):
 
 
 class ExportRecord(BaseModel):
+    id: int
     export_number: int
+    report_available: bool
     period_start: str
     period_end: str
     analysis_date: str
@@ -579,7 +582,36 @@ def delete_status_rule(rule_id: int, project: str) -> dict[str, bool]:
 @app.get("/api/exports", response_model=list[ExportRecord])
 def saved_exports(project: str) -> list[ExportRecord]:
     db.init_db()
-    return [ExportRecord(**item) for item in list_exports(project.strip())]
+    records = list_exports(project.strip())
+    return [
+        ExportRecord(
+            **item,
+            report_available=bool(
+                (path := analysis_report_path(item.get("report_file_name"))) and path.is_file()
+            ),
+        )
+        for item in records
+    ]
+
+
+@app.get("/api/exports/{export_id}/download")
+def download_saved_export(project: str, export_id: int) -> FileResponse:
+    db.init_db()
+    project = project.strip()
+    if not project:
+        raise HTTPException(status_code=400, detail="Укажите проект")
+    item = next((row for row in list_exports(project) if row["id"] == export_id), None)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Выгрузка не найдена")
+    path = analysis_report_path(item.get("report_file_name"))
+    if not path or not path.is_file():
+        raise HTTPException(status_code=404, detail="Файл отчёта для этой выгрузки недоступен")
+    filename = f"Выгрузка_{item['export_number']}_аналитика.xlsx"
+    return FileResponse(
+        path,
+        filename=filename,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @app.delete("/api/exports")

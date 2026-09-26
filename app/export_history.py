@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import Any
 import pandas as pd
 
 from app import db
+from app.config import ANALYSIS_REPORTS_DIR
 from app.analytics import COUNT_COL
 from app.report_writer import write_excel
 from app.source_utils import safe_filename
@@ -20,6 +22,21 @@ QUALITY_RATE_COL = "Кач. %"
 MISSED_RATE_COL = "Недозвон %"
 DEMAND_COUNT_COL = "Сигнал спроса"
 DEMAND_RATE_COL = "Сигнал спроса %"
+
+
+def analysis_report_path(report_file_name: str | None) -> Path | None:
+    if not report_file_name or Path(report_file_name).name != report_file_name:
+        return None
+    if Path(report_file_name).suffix.lower() != ".xlsx":
+        return None
+    token = Path(report_file_name).stem
+    if len(token) != 32:
+        return None
+    try:
+        uuid.UUID(hex=token)
+    except ValueError:
+        return None
+    return ANALYSIS_REPORTS_DIR / report_file_name
 SMALL_SAMPLE_THRESHOLD = 30
 
 
@@ -83,6 +100,7 @@ def save_analysis_export(
     first_period, first_total, _ = period_results[0]
     total_metrics = _metrics_from_row(first_total.iloc[0] if not first_total.empty else {})
     stamp = db.now_text()
+    replaced_report_path: Path | None = None
 
     with db.connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -96,7 +114,7 @@ def save_analysis_export(
             )
         existing = conn.execute(
             """
-            SELECT id FROM analysis_exports
+            SELECT id, report_file_name FROM analysis_exports
             WHERE project_code = ? AND export_number = ?
             """,
             (project, export_number),
@@ -107,6 +125,7 @@ def save_analysis_export(
                 "Удалите ее или сохраните с заменой."
             )
         if existing and replace:
+            replaced_report_path = analysis_report_path(existing["report_file_name"])
             conn.execute("DELETE FROM analysis_export_breakdowns WHERE export_id = ?", (existing["id"],))
             conn.execute("DELETE FROM analysis_export_periods WHERE export_id = ?", (existing["id"],))
             conn.execute("DELETE FROM analysis_exports WHERE id = ?", (existing["id"],))
@@ -193,6 +212,11 @@ def save_analysis_export(
                             json.dumps(item["metrics"], ensure_ascii=False),
                         ),
                     )
+    if replaced_report_path:
+        try:
+            replaced_report_path.unlink(missing_ok=True)
+        except OSError:
+            pass
     return export_id
 
 
@@ -200,7 +224,7 @@ def delete_analysis_export(project: str, export_number: int) -> bool:
     with db.connect() as conn:
         row = conn.execute(
             """
-            SELECT id FROM analysis_exports
+            SELECT id, report_file_name FROM analysis_exports
             WHERE project_code = ? AND export_number = ?
             """,
             (project, export_number),
@@ -210,6 +234,12 @@ def delete_analysis_export(project: str, export_number: int) -> bool:
         conn.execute("DELETE FROM analysis_export_breakdowns WHERE export_id = ?", (row["id"],))
         conn.execute("DELETE FROM analysis_export_periods WHERE export_id = ?", (row["id"],))
         conn.execute("DELETE FROM analysis_exports WHERE id = ?", (row["id"],))
+    report_path = analysis_report_path(row["report_file_name"])
+    if report_path:
+        try:
+            report_path.unlink(missing_ok=True)
+        except OSError:
+            pass
     return True
 
 

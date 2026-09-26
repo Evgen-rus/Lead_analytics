@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import shutil
+import uuid
 from pathlib import Path
 from typing import Callable
 
 import pandas as pd
 
 from app.analytics import add_domain, status_summary, summarize
-from app.config import MATCHED_SHEET_NAME
+from app.config import ANALYSIS_REPORTS_DIR, MATCHED_SHEET_NAME
 from app.excel_reader import list_sheets, read_excel_sheet
 from app.export_history import ExportMetadata, normalized_metadata, save_analysis_export
 from app.models import ColumnMapping
@@ -110,13 +112,21 @@ def analyze_file(
     if progress:
         progress("Формирование аналитического отчёта", total_rows, total_rows)
     written = write_excel(output, {"Итог": pd.concat(totals, ignore_index=True), **report_sheets})
-    save_analysis_export(
-        project,
-        metadata,
-        period_results,
-        report_file_name=written.name,
-        replace=replace_export,
-    )
+    ANALYSIS_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    report_file_name = f"{uuid.uuid4().hex}.xlsx"
+    archived_report = ANALYSIS_REPORTS_DIR / report_file_name
+    shutil.copy2(written, archived_report)
+    try:
+        save_analysis_export(
+            project,
+            metadata,
+            period_results,
+            report_file_name=report_file_name,
+            replace=replace_export,
+        )
+    except Exception:
+        archived_report.unlink(missing_ok=True)
+        raise
     return written
 
 

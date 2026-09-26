@@ -1,12 +1,15 @@
+from pathlib import Path
+
 import pandas as pd
 
-from app import db
+from app import db, export_history
 from app.export_history import (
     ExportMetadata,
     ExportPeriod,
     build_conclusions,
     build_export_dynamics,
     build_registry,
+    delete_analysis_export,
     list_exports,
     save_analysis_export,
 )
@@ -80,3 +83,54 @@ def test_export_number_is_automatic_and_periods_are_saved(tmp_path, monkeypatch)
         ("2026-01-01", "2026-01-31"),
         ("2026-02-01", "2026-02-28"),
     ]
+
+
+def test_saved_report_is_downloadable_and_removed_with_history(tmp_path, monkeypatch):
+    from backend.app import main
+
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "analytics.db")
+    reports_dir = tmp_path / "reports"
+    monkeypatch.setattr(export_history, "ANALYSIS_REPORTS_DIR", reports_dir)
+    db.init_db()
+    total = pd.DataFrame(
+        {
+            "Всего идентификаций": [2],
+            "Недозвон": [1],
+            "Недозвон %": [0.5],
+            "Качественные": [1],
+            "Кач. %": [0.5],
+            "Сигнал спроса": [1],
+            "Сигнал спроса %": [0.5],
+        }
+    )
+    period = ExportPeriod("2026-01-01", "2026-01-31")
+    report_name = "0123456789abcdef0123456789abcdef.xlsx"
+    report_path = reports_dir / report_name
+    reports_dir.mkdir(parents=True)
+    report_path.write_bytes(b"complete workbook")
+    export_id = save_analysis_export(
+        "Demo",
+        ExportMetadata(None, [period]),
+        [(period, total, {"domain_channel": pd.DataFrame(), "source_channel": pd.DataFrame(), "channel": pd.DataFrame()})],
+        report_file_name=report_name,
+    )
+
+    history = main.saved_exports("Demo")
+    assert history[0].id == export_id
+    assert history[0].report_available is True
+    assert Path(main.download_saved_export("Demo", export_id).path) == report_path
+    replacement_name = "fedcba9876543210fedcba9876543210.xlsx"
+    replacement_path = reports_dir / replacement_name
+    replacement_path.write_bytes(b"replacement workbook")
+    replacement_id = save_analysis_export(
+        "Demo",
+        ExportMetadata(1, [period]),
+        [(period, total, {"domain_channel": pd.DataFrame(), "source_channel": pd.DataFrame(), "channel": pd.DataFrame()})],
+        report_file_name=replacement_name,
+        replace=True,
+    )
+    assert not report_path.exists()
+    assert replacement_path.exists()
+    assert Path(main.download_saved_export("Demo", replacement_id).path) == replacement_path
+    assert delete_analysis_export("Demo", 1)
+    assert not replacement_path.exists()

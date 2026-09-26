@@ -927,7 +927,7 @@ export function ExportHistory({
             </thead>
             <tbody>
               {exports.map((item) => (
-                <tr key={item.export_number}>
+                <tr key={item.id}>
                   <td>{item.export_number}</td>
                   <td>
                     {item.periods.map((period) => (
@@ -961,9 +961,20 @@ export function ExportHistory({
                     ))}
                   </td>
                   <td>
-                    <button className="dangerButton" disabled={loading} onClick={() => onAskDelete(item.export_number)}>
-                      Удалить
-                    </button>
+                    <div className="actions">
+                      {item.report_available && (
+                        <a
+                          className="download secondary"
+                          href={`${API}/exports/${item.id}/download?${projectQuery(project)}`}
+                          title="Скачать полный Excel-отчёт"
+                        >
+                          Excel
+                        </a>
+                      )}
+                      <button className="dangerButton" disabled={loading} onClick={() => onAskDelete(item.export_number)}>
+                        Удалить
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

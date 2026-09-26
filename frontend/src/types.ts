@@ -41,7 +41,9 @@ export type GoogleSheetsExport = {
 };
 
 export type ExportRecord = {
+  id: number;
   export_number: number;
+  report_available: boolean;
   period_start: string;
   period_end: string;
   analysis_date: string;

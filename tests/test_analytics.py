@@ -77,6 +77,15 @@ def test_analyze_file_loads_status_rules_once(monkeypatch, tmp_path):
     )
     rules = [object()]
     calls = 0
+    saved_export = {}
+
+    def write_report(path, _):
+        path.write_bytes(b"complete workbook")
+        return path
+
+    def save_export(*_args, **kwargs):
+        saved_export.update(kwargs)
+        return 1
 
     monkeypatch.setattr(pipeline, "read_excel_sheet", lambda *_: source)
 
@@ -91,8 +100,9 @@ def test_analyze_file_loads_status_rules_once(monkeypatch, tmp_path):
 
     monkeypatch.setattr(pipeline, "sorted_rules", load_rules)
     monkeypatch.setattr(pipeline, "classify", classify_with_rules)
-    monkeypatch.setattr(pipeline, "write_excel", lambda path, _: path)
-    monkeypatch.setattr(pipeline, "save_analysis_export", lambda *_args, **_kwargs: 1)
+    monkeypatch.setattr(pipeline, "write_excel", write_report)
+    monkeypatch.setattr(pipeline, "save_analysis_export", save_export)
+    monkeypatch.setattr(pipeline, "ANALYSIS_REPORTS_DIR", tmp_path / "reports")
 
     pipeline.analyze_file(
         "p",
@@ -103,6 +113,8 @@ def test_analyze_file_loads_status_rules_once(monkeypatch, tmp_path):
     )
 
     assert calls == 1
+    archived_report = tmp_path / "reports" / saved_export["report_file_name"]
+    assert archived_report.read_bytes() == b"complete workbook"
 
 
 def test_analyze_file_uses_matched_sheet_not_duplicates(tmp_path, monkeypatch):
@@ -143,12 +155,14 @@ def test_analyze_file_uses_matched_sheet_not_duplicates(tmp_path, monkeypatch):
 
     def fake_write(output, sheets):
         captured["data"] = next(frame for name, frame in sheets.items() if name.startswith("Данные "))
+        output.write_bytes(b"workbook")
         return output
 
     monkeypatch.setattr(pipeline, "sorted_rules", lambda _project: [])
     monkeypatch.setattr(pipeline, "classify", lambda *_args, **_kwargs: ("Качественные", "тест"))
     monkeypatch.setattr(pipeline, "write_excel", fake_write)
     monkeypatch.setattr(pipeline, "save_analysis_export", lambda *_args, **_kwargs: 1)
+    monkeypatch.setattr(pipeline, "ANALYSIS_REPORTS_DIR", tmp_path / "reports")
 
     pipeline.analyze_file(
         "p",
@@ -182,12 +196,15 @@ def test_analyze_file_builds_five_sheets_for_each_period(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline, "read_excel_sheet", lambda *_: source)
     monkeypatch.setattr(pipeline, "sorted_rules", lambda _project: [])
     monkeypatch.setattr(pipeline, "classify", lambda *_args: ("Качественные", "тест"))
-    monkeypatch.setattr(
-        pipeline,
-        "write_excel",
-        lambda path, sheets: captured.update(sheets) or path,
-    )
+
+    def fake_write(path, sheets):
+        captured.update(sheets)
+        path.write_bytes(b"workbook")
+        return path
+
+    monkeypatch.setattr(pipeline, "write_excel", fake_write)
     monkeypatch.setattr(pipeline, "save_analysis_export", lambda *_args, **_kwargs: 1)
+    monkeypatch.setattr(pipeline, "ANALYSIS_REPORTS_DIR", tmp_path / "reports")
 
     pipeline.analyze_file(
         "p",

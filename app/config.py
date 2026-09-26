@@ -5,6 +5,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT_DIR / "data"
 INPUT_DIR = DATA_DIR / "input"
 OUTPUT_DIR = DATA_DIR / "output"
+ANALYSIS_REPORTS_DIR = DATA_DIR / "runs" / "analysis-reports"
 DB_PATH = DATA_DIR / "analytics.db"
 RULES_DIR = ROOT_DIR / "rules"
 MATCHED_SHEET_NAME = "Сопоставленные"
