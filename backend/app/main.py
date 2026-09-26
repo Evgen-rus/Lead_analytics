@@ -13,6 +13,7 @@ import pandas as pd
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from googleapiclient.errors import HttpError
 from pydantic import BaseModel
 
 from app import db
@@ -26,7 +27,7 @@ from app.export_history import (
     write_project_comparison,
     write_project_summary,
 )
-from app.google_sheets import export_workbook
+from app.google_sheets import export_workbook, read_spreadsheet_url
 from app.matcher import match_files
 from app.models import ColumnMapping, StatusRule
 from app.pipeline import analyze_file
@@ -301,8 +302,13 @@ def _inspect_workbook(path: Path) -> list[SheetPreview]:
     return previews
 
 
-def _inspect_upload(path: Path, filename: str, role: Literal["lk", "client"]) -> FileInspect:
-    detected = detect_match_mapping(path, role)
+def _inspect_upload(
+    path: Path,
+    filename: str,
+    role: Literal["lk", "client"],
+    preferred_sheet: str | None = None,
+) -> FileInspect:
+    detected = detect_match_mapping(path, role, preferred_sheet)
     return FileInspect(
         filename=filename,
         detected=_from_mapping(detected),
@@ -318,6 +324,19 @@ def _validate_excel(file: UploadFile) -> None:
     name = file.filename or ""
     if not name.lower().endswith(".xlsx"):
         raise HTTPException(status_code=400, detail=f"Файл {name} должен быть .xlsx")
+
+
+def _validate_input_source(file: UploadFile | None, sheet_url: str | None, label: str) -> str | None:
+    normalized_url = (sheet_url or "").strip()
+    if (file is None and not normalized_url) or (file is not None and normalized_url):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Для источника «{label}» выберите .xlsx или вставьте ссылку Google Таблицы",
+        )
+    if file is not None:
+        _validate_excel(file)
+        return None
+    return normalized_url
 
 
 def _validate_periods(periods: list[AnalysisPeriodPayload]) -> None:
@@ -597,32 +616,63 @@ def download_comparison(project: str) -> FileResponse:
 @app.post("/api/runs", response_model=UploadResponse)
 def create_run(
     project: str = Form(...),
-    lk_file: UploadFile = File(...),
-    client_file: UploadFile = File(...),
+    lk_file: UploadFile | None = File(default=None),
+    lk_url: str | None = Form(default=None),
+    client_file: UploadFile | None = File(default=None),
+    client_url: str | None = Form(default=None),
 ) -> UploadResponse:
-    _validate_excel(lk_file)
-    _validate_excel(client_file)
-    ensure_dirs()
-    db.init_db()
     project = project.strip()
     if not project:
         raise HTTPException(status_code=400, detail="Укажите проект")
+
+    lk_url = _validate_input_source(lk_file, lk_url, "ЛК")
+    client_url = _validate_input_source(client_file, client_url, "клиент")
+    google_sources: dict[str, tuple[bytes, str, str | None]] = {}
+    for role, source_url in (("lk", lk_url), ("client", client_url)):
+        if not source_url:
+            continue
+        try:
+            google_sources[role] = read_spreadsheet_url(source_url)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except HttpError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Не удалось прочитать Google Таблицу ({role}): проверьте доступ сервисного аккаунта",
+            ) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    ensure_dirs()
+    db.init_db()
 
     run_id = uuid.uuid4().hex[:12]
     input_dir = RUNS_DIR / run_id / "input"
     input_dir.mkdir(parents=True, exist_ok=True)
     lk_path = input_dir / "lk.xlsx"
     client_path = input_dir / "client.xlsx"
-    with lk_path.open("wb") as handle:
-        shutil.copyfileobj(lk_file.file, handle)
-    with client_path.open("wb") as handle:
-        shutil.copyfileobj(client_file.file, handle)
+
+    for role, file, path in (("lk", lk_file, lk_path), ("client", client_file, client_path)):
+        if file is not None:
+            with path.open("wb") as handle:
+                shutil.copyfileobj(file.file, handle)
+        else:
+            path.write_bytes(google_sources[role][0])
+
+    lk_name = (lk_file.filename or "lk.xlsx") if lk_file else f"{google_sources['lk'][1]}.xlsx"
+    client_name = (
+        client_file.filename or "client.xlsx"
+        if client_file
+        else f"{google_sources['client'][1]}.xlsx"
+    )
+    lk_preferred_sheet = google_sources.get("lk", (b"", "", None))[2]
+    client_preferred_sheet = google_sources.get("client", (b"", "", None))[2]
 
     return UploadResponse(
         run_id=run_id,
         project=project,
-        lk=_inspect_upload(lk_path, lk_file.filename or "lk.xlsx", "lk"),
-        client=_inspect_upload(client_path, client_file.filename or "client.xlsx", "client"),
+        lk=_inspect_upload(lk_path, lk_name, "lk", lk_preferred_sheet),
+        client=_inspect_upload(client_path, client_name, "client", client_preferred_sheet),
     )
 
 

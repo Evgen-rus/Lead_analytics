@@ -1,14 +1,21 @@
 from datetime import date, datetime
+from io import BytesIO
 
-from openpyxl import Workbook
+import pandas as pd
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import PatternFill
 
+from app.excel_reader import read_excel_sheet
+from app import google_sheets
 from app.google_sheets import (
     _cell_fill_runs,
     _create_and_format_sheets,
     _rgb_color,
+    _set_google_cell_value,
     _write_all_values,
     google_value,
+    parse_spreadsheet_url,
+    read_spreadsheet_url,
     unique_sheet_title,
 )
 
@@ -69,6 +76,102 @@ def test_google_value_keeps_scalars_and_converts_dates() -> None:
     assert google_value(True) is True
     assert google_value(date(2026, 7, 15)) == "2026-07-15"
     assert google_value(datetime(2026, 7, 15, 10, 30)) == "2026-07-15T10:30:00"
+
+
+def test_parse_google_spreadsheet_link_with_selected_tab() -> None:
+    spreadsheet_id, gid = parse_spreadsheet_url(
+        "https://docs.google.com/spreadsheets/d/1SrZCbP6QP-cRENMOOwBrZ2JoONEgEr3zF8-yESb6PAs/"
+        "edit?gid=336256511#gid=336256511"
+    )
+
+    assert spreadsheet_id == "1SrZCbP6QP-cRENMOOwBrZ2JoONEgEr3zF8-yESb6PAs"
+    assert gid == 336256511
+
+
+def test_google_date_serial_is_read_as_excel_date(tmp_path) -> None:
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet["A1"] = "Дата"
+    _set_google_cell_value(
+        worksheet["A2"],
+        {
+            "effectiveValue": {"numberValue": 46218},
+            "effectiveFormat": {"numberFormat": {"type": "DATE"}},
+        },
+        46218,
+    )
+    path = tmp_path / "google.xlsx"
+    workbook.save(path)
+
+    assert read_excel_sheet(path).loc[0, "Дата"] == pd.Timestamp("2026-07-15")
+
+
+def test_read_spreadsheet_url_imports_all_tabs_and_selects_linked_tab(monkeypatch) -> None:
+    rows_by_sheet = {
+        "ЛК": [["LKID"], ["lead-1"]],
+        "Клиент": [["Дата", "Статус"], [46218, "Новый"]],
+    }
+
+    class FakeSpreadsheetService:
+        def spreadsheets(self):
+            return self
+
+        def values(self):
+            return self
+
+        def get(self, **kwargs):
+            if "ranges" in kwargs:
+                title = kwargs["ranges"][0].split("!")[0].strip("'")
+                grid_rows = []
+                for row in rows_by_sheet[title]:
+                    cells = []
+                    for column_index, value in enumerate(row):
+                        if isinstance(value, str):
+                            cell = {"effectiveValue": {"stringValue": value}}
+                        else:
+                            cell = {
+                                "effectiveValue": {"numberValue": value},
+                                "effectiveFormat": {"numberFormat": {"type": "DATE"}}
+                                if title == "Клиент" and column_index == 0 and value == 46218
+                                else {},
+                            }
+                        cells.append(cell)
+                    grid_rows.append({"values": cells})
+                return FakeRequest({"sheets": [{"data": [{"rowData": grid_rows}]}]})
+            if "fields" in kwargs:
+                return FakeRequest(
+                    {
+                        "properties": {"title": "Тест"},
+                        "sheets": [
+                            {"properties": {"sheetId": 111, "title": "ЛК"}},
+                            {"properties": {"sheetId": 222, "title": "Клиент"}},
+                        ],
+                    }
+                )
+            if "range" in kwargs:
+                title = kwargs["range"].split("!")[0].strip("'")
+                return FakeRequest({"values": rows_by_sheet[title]})
+            raise AssertionError(f"Unexpected Sheets API request: {kwargs}")
+
+    service = FakeSpreadsheetService()
+    monkeypatch.setattr(google_sheets, "credentials_path", lambda: "service-account.json")
+    monkeypatch.setattr(
+        google_sheets.Credentials,
+        "from_service_account_file",
+        lambda *_args, **_kwargs: object(),
+    )
+    monkeypatch.setattr(google_sheets, "build", lambda *_args, **_kwargs: service)
+
+    content, title, selected_sheet = read_spreadsheet_url(
+        "https://docs.google.com/spreadsheets/d/example-id/edit?gid=222#gid=222"
+    )
+    workbook = load_workbook(BytesIO(content), data_only=True)
+
+    assert title == "Тест"
+    assert workbook.sheetnames == ["ЛК", "Клиент"]
+    assert workbook.active.title == selected_sheet == "Клиент"
+    frame = pd.read_excel(BytesIO(content), sheet_name="Клиент", dtype=object)
+    assert frame.loc[0, "Дата"] == pd.Timestamp("2026-07-15")
 
 
 def test_cell_fill_runs_group_adjacent_colors_and_keep_changes() -> None:

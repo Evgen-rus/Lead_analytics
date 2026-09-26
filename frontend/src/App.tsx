@@ -64,6 +64,8 @@ export default function App() {
   const [savedExports, setSavedExports] = useState<ExportRecord[]>([]);
   const [lkFile, setLkFile] = useState<File | null>(null);
   const [clientFile, setClientFile] = useState<File | null>(null);
+  const [lkSpreadsheetUrl, setLkSpreadsheetUrl] = useState("");
+  const [clientSpreadsheetUrl, setClientSpreadsheetUrl] = useState("");
   const [upload, setUpload] = useState<UploadResponse | null>(null);
   const [lkMapping, setLkMapping] = useState<Mapping>(emptyMapping);
   const [clientMapping, setClientMapping] = useState<Mapping>(emptyMapping);
@@ -87,7 +89,12 @@ export default function App() {
   const [activeJob, setActiveJob] = useState<ProcessingJob | null>(null);
   const [googleSheetsUrl, setGoogleSheetsUrl] = useState("");
 
-  const canUpload = useMemo(() => project.trim() && lkFile && clientFile, [project, lkFile, clientFile]);
+  const canUpload = useMemo(
+    () => project.trim()
+      && (Boolean(lkFile) !== Boolean(lkSpreadsheetUrl.trim()))
+      && (Boolean(clientFile) !== Boolean(clientSpreadsheetUrl.trim())),
+    [project, lkFile, lkSpreadsheetUrl, clientFile, clientSpreadsheetUrl]
+  );
   const canMatch = useMemo(
     () => upload && lkMapping.lkid_column && lkMapping.source_column && clientMapping.status_column,
     [upload, lkMapping.lkid_column, lkMapping.source_column, clientMapping.status_column]
@@ -108,7 +115,7 @@ export default function App() {
   );
   const statusText = loading
     ? operation || "Выполняется..."
-    : step === "upload" ? canUpload ? "Файлы готовы к проверке" : "Выберите проект и файлы"
+    : step === "upload" ? canUpload ? "Источники готовы к проверке" : "Выберите проект и источники"
     : step === "mapping" ? "Проверьте колонки"
     : step === "analyze" ? "Настройте аналитику" : "Отчёт готов";
 
@@ -207,13 +214,19 @@ export default function App() {
   }
 
   async function uploadFiles() {
-    if (!canUpload || !lkFile || !clientFile) return;
+    if (!canUpload) return;
     setLoading(true);
-    setOperation("Загружаю и читаю Excel-файлы");
+    setOperation("Загружаю и читаю источники");
     setOperationStage("upload");
     setError("");
     try {
-      const data = await uploadRun(project, lkFile, clientFile);
+      const data = await uploadRun(
+        project,
+        lkFile,
+        lkSpreadsheetUrl,
+        clientFile,
+        clientSpreadsheetUrl
+      );
       setOperationStage("read");
       setUpload(data);
       setMatchPreview(null);
@@ -287,7 +300,7 @@ export default function App() {
         status_rules: statusRules,
         periods,
         analysis_date: analysisDate || null,
-        source_file_name: clientFile?.name || matchPreview?.filename || upload.client.filename
+        source_file_name: clientFile?.name || upload.client.filename
       });
       const completed = await waitForJob(job);
       setOperationStage("done");
@@ -432,7 +445,7 @@ export default function App() {
             <div className="panelHeader">
               <div>
                 <h2>Проект и файлы</h2>
-                <p>Выберите проект, нашу выгрузку и выгрузку клиента</p>
+                <p>Выберите проект и для каждого источника укажите Excel-файл или Google-таблицу</p>
               </div>
               <div className="actions">
                 <button className="ghostButton" onClick={openRulesManager} disabled={!project.trim() || loading}>
@@ -451,23 +464,37 @@ export default function App() {
               <FileDropZone
                 label="Наша выгрузка / ЛК"
                 file={lkFile}
+                spreadsheetUrl={lkSpreadsheetUrl}
                 disabled={loading}
                 onChange={(file) => {
                   setLkFile(file);
+                  if (file) setLkSpreadsheetUrl("");
+                  resetRunOutputs();
+                }}
+                onSpreadsheetUrlChange={(url) => {
+                  setLkSpreadsheetUrl(url);
+                  if (url.trim()) setLkFile(null);
                   resetRunOutputs();
                 }}
               />
               <FileDropZone
                 label="Выгрузка клиента / CRM"
                 file={clientFile}
+                spreadsheetUrl={clientSpreadsheetUrl}
                 disabled={loading}
                 onChange={(file) => {
                   setClientFile(file);
+                  if (file) setClientSpreadsheetUrl("");
+                  resetRunOutputs();
+                }}
+                onSpreadsheetUrlChange={(url) => {
+                  setClientSpreadsheetUrl(url);
+                  if (url.trim()) setClientFile(null);
                   resetRunOutputs();
                 }}
               />
             </div>
-            {!canUpload && <p className="uploadHint">Чтобы продолжить, выберите проект и обе Excel-выгрузки.</p>}
+            {!canUpload && <p className="uploadHint">Чтобы продолжить, укажите Excel-файл или ссылку для обоих источников.</p>}
           </section>
           <ExportHistory
             project={project}

@@ -73,15 +73,20 @@ function validExcelFile(file: File): boolean {
 export function FileDropZone({
   label,
   file,
+  spreadsheetUrl = "",
   disabled = false,
-  onChange
+  onChange,
+  onSpreadsheetUrlChange
 }: {
   label: string;
   file: File | null;
+  spreadsheetUrl?: string;
   disabled?: boolean;
   onChange: (file: File | null) => void;
+  onSpreadsheetUrlChange?: (url: string) => void;
 }) {
   const inputId = useId();
+  const urlId = useId();
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState("");
 
@@ -119,13 +124,29 @@ export function FileDropZone({
           type="file"
           accept=".xlsx"
           disabled={disabled}
-          onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
+          onChange={(event) => {
+            selectFile(event.target.files?.[0] ?? null);
+            event.target.value = "";
+          }}
         />
         <span className="fileBadge">XLSX</span>
         <strong>{file ? file.name : "Выберите или перетащите файл"}</strong>
         <small>{fileLabel(file)}</small>
       </label>
       {error && <small className="fieldError">{error}</small>}
+      {onSpreadsheetUrlChange && (
+        <label className="field" htmlFor={urlId}>
+          <span>Или ссылка на Google-таблицу</span>
+          <input
+            id={urlId}
+            type="url"
+            value={spreadsheetUrl}
+            placeholder="https://docs.google.com/spreadsheets/d/..."
+            disabled={disabled}
+            onChange={(event) => onSpreadsheetUrlChange(event.target.value)}
+          />
+        </label>
+      )}
     </div>
   );
 }

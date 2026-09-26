@@ -57,11 +57,19 @@ export async function deleteStatusRule(ruleId: number, project: string): Promise
   );
 }
 
-export async function uploadRun(project: string, lkFile: File, clientFile: File): Promise<UploadResponse> {
+export async function uploadRun(
+  project: string,
+  lkFile: File | null,
+  lkUrl: string,
+  clientFile: File | null,
+  clientUrl: string
+): Promise<UploadResponse> {
   const form = new FormData();
   form.append("project", project.trim());
-  form.append("lk_file", lkFile);
-  form.append("client_file", clientFile);
+  if (lkFile) form.append("lk_file", lkFile);
+  if (lkUrl.trim()) form.append("lk_url", lkUrl.trim());
+  if (clientFile) form.append("client_file", clientFile);
+  if (clientUrl.trim()) form.append("client_url", clientUrl.trim());
   return jsonRequest<UploadResponse>(`${API}/runs`, { method: "POST", body: form });
 }
 
